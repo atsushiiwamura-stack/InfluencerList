@@ -3,7 +3,7 @@ services:
     name: lemon-map-api
     runtime: python
     plan: free
-    rootDir: app/backend
+    rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
