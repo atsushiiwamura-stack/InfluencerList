@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: lemon-map-api
+    runtime: python
+    plan: free
+    rootDir: app/backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: LEMONMAP_SECRET_KEY
+        generateValue: true
+      - key: LEMONMAP_ADMIN_USER
+        value: admin
+      - key: LEMONMAP_ADMIN_PASSWORD
+        sync: false
+      - key: LEMONMAP_CORS_ORIGINS
+        sync: false
