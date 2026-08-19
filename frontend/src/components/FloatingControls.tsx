@@ -10,6 +10,8 @@ export default function FloatingControls() {
   const openAddSalonModal = useAppStore((s) => s.openAddSalonModal);
   const filterPopoverOpen = useAppStore((s) => s.filterPopoverOpen);
   const setFilterPopoverOpen = useAppStore((s) => s.setFilterPopoverOpen);
+  const areaReportOpen = useAppStore((s) => s.areaReportOpen);
+  const setAreaReportOpen = useAppStore((s) => s.setAreaReportOpen);
   const meta = useAppStore((s) => s.meta);
 
   return (
@@ -21,6 +23,14 @@ export default function FloatingControls() {
           <span>✂️ {meta.salon_count.toLocaleString()}</span>
         </div>
       )}
+
+      <IconButton
+        active={areaReportOpen}
+        label="エリアレポート"
+        onClick={() => setAreaReportOpen(!areaReportOpen)}
+      >
+        📊
+      </IconButton>
 
       <IconButton
         active={filterPopoverOpen}

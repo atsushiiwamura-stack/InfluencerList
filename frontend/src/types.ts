@@ -8,15 +8,10 @@ export interface Influencer {
   gender: string | null;
   prefecture: string;
   city: string;
-  address: string | null;
   coverage_areas: string | null;
-  past_projects: number | null;
   latitude: number;
   longitude: number;
   location_precision: "exact" | "city" | "prefecture" | "unknown";
-  profile_image_url: string | null;
-  source: "excel_import" | "csv_upload";
-  updated_at: string | null;
 }
 
 export interface Salon {
@@ -116,4 +111,48 @@ export interface SalonInput {
   model_recruit_experience?: boolean;
   latitude?: number | null;
   longitude?: number | null;
+}
+
+export interface Campaign {
+  id: number;
+  salon_id: number;
+  campaign_no: number | null;
+  title: string | null;
+  menu: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  applicant_count: number | null;
+  hired_count: number | null;
+  notes: string | null;
+}
+
+export interface CampaignInput {
+  campaign_no?: number | null;
+  title?: string | null;
+  menu?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  applicant_count?: number | null;
+  hired_count?: number | null;
+  notes?: string | null;
+}
+
+export interface SalonWithCampaigns {
+  salon: Salon;
+  campaigns: Campaign[];
+  avg_applicants: number | null;
+  campaign_count: number;
+}
+
+export interface AreaPrediction {
+  sample_size: number;
+  avg_applicants: number | null;
+  median_applicants: number | null;
+  by_menu: Record<string, number>;
+}
+
+export interface AreaReport {
+  query: string;
+  salons: SalonWithCampaigns[];
+  prediction: AreaPrediction;
 }

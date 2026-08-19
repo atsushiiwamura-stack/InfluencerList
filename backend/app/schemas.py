@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import date
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 
 
 class InfluencerOut(BaseModel):
@@ -13,18 +13,18 @@ class InfluencerOut(BaseModel):
     gender: Optional[str] = None
     prefecture: str
     city: str
-    address: Optional[str] = None
     coverage_areas: Optional[str] = None
-    past_projects: Optional[int] = None
     latitude: float
     longitude: float
     location_precision: str
-    profile_image_url: Optional[str] = None
-    source: str
-    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
+
+    @field_serializer("latitude", "longitude")
+    def _round_coord(self, v: float) -> float:
+        # 11cm精度で十分なため小数点以下6桁に丸め、一覧APIのペイロードを軽くする
+        return round(v, 6)
 
 
 class SalonOut(BaseModel):
@@ -46,6 +46,10 @@ class SalonOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+    @field_serializer("latitude", "longitude")
+    def _round_coord(self, v: float) -> float:
+        return round(v, 6)
 
 
 class SalonInput(BaseModel):
@@ -102,3 +106,43 @@ class StationInfo(BaseModel):
     distance_m: Optional[float] = None
     walking_minutes: Optional[int] = None
     source: str = "heartrails"
+
+
+# ---------- 募集キャンペーン履歴 ----------
+class CampaignInput(BaseModel):
+    campaign_no: Optional[int] = None
+    title: Optional[str] = None
+    menu: Optional[str] = None  # 例: "カット,パーマ"
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    applicant_count: Optional[int] = None
+    hired_count: Optional[int] = None
+    notes: Optional[str] = None
+
+
+class CampaignOut(CampaignInput):
+    id: int
+    salon_id: int
+
+    class Config:
+        from_attributes = True
+
+
+class SalonWithCampaigns(BaseModel):
+    salon: SalonOut
+    campaigns: List[CampaignOut]
+    avg_applicants: Optional[float] = None
+    campaign_count: int
+
+
+class AreaPrediction(BaseModel):
+    sample_size: int
+    avg_applicants: Optional[float] = None
+    median_applicants: Optional[float] = None
+    by_menu: dict = {}
+
+
+class AreaReport(BaseModel):
+    query: str
+    salons: List[SalonWithCampaigns]
+    prediction: AreaPrediction

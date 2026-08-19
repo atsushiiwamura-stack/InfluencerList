@@ -8,6 +8,7 @@ import DetailCard from "./components/DetailCard";
 import AddSalonModal from "./components/AddSalonModal";
 import LoginModal from "./components/LoginModal";
 import CsvUploadModal from "./components/CsvUploadModal";
+import AreaReportPanel from "./components/AreaReportPanel";
 
 export default function App() {
   const darkMode = useAppStore((s) => s.darkMode);
@@ -32,6 +33,7 @@ export default function App() {
       <FilterPopover />
       <DetailCard />
       <AddSalonModal />
+      <AreaReportPanel />
 
       {loading && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[600] bg-white dark:bg-slate-800 shadow-lg rounded-full px-4 py-1.5 text-xs text-slate-500 dark:text-slate-300">

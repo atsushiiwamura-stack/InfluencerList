@@ -1,6 +1,7 @@
 import { useAppStore } from "../store/useAppStore";
 import { influencerLabel } from "../utils/geo";
 import RouteInfo from "./RouteInfo";
+import CampaignSection from "./CampaignSection";
 
 export default function DetailCard() {
   const selectedSalonId = useAppStore((s) => s.selectedSalonId);
@@ -68,6 +69,8 @@ export default function DetailCard() {
               <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-2">🚉 最寄駅・アクセス</h4>
               <RouteInfo lat={salon.latitude} lon={salon.longitude} />
             </section>
+
+            <CampaignSection salonId={salon.id} />
 
             <section>
               <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-2">

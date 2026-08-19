@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, Text
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, Text, Date, ForeignKey, func
+from sqlalchemy.orm import relationship
 from .database import Base
 
 
@@ -44,6 +45,27 @@ class Salon(Base):
     latitude = Column(Float, nullable=False)
     longitude = Column(Float, nullable=False)
     is_sample = Column(Boolean, default=False)  # サンプル(ダミー)データフラグ
+
+    campaigns = relationship("Campaign", back_populates="salon", cascade="all, delete-orphan")
+
+
+class Campaign(Base):
+    """サロンごとのモデル募集キャンペーン履歴（営業資料・応募人数予測に使用）。"""
+    __tablename__ = "campaigns"
+
+    id = Column(Integer, primary_key=True, index=True)
+    salon_id = Column(Integer, ForeignKey("salons.id"), nullable=False, index=True)
+    campaign_no = Column(Integer, nullable=True)  # 何回目のキャンペーンか
+    title = Column(String, nullable=True)
+    menu = Column(String, nullable=True)  # 例: "カット,パーマ,眉カット"
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)
+    applicant_count = Column(Integer, nullable=True)  # 応募・集まった人数
+    hired_count = Column(Integer, nullable=True)  # 実際に採用/来店した人数
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    salon = relationship("Salon", back_populates="campaigns")
 
 
 class AdminUser(Base):

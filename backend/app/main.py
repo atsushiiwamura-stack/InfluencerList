@@ -2,6 +2,7 @@ import os
 from typing import Optional, List
 from fastapi import FastAPI, Depends, UploadFile, File, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
@@ -34,6 +35,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# インフルエンサー一覧など大きなJSONを返すエンドポイントの転送量を大幅に削減し、
+# 読み込みの体感速度を上げる。
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 TOKYO23 = {
     "千代田区", "中央区", "港区", "新宿区", "文京区", "台東区", "墨田区", "江東区",
@@ -281,6 +285,110 @@ def salon_ranking(salon_id: int, limit: int = 10, max_distance_km: float = 5.0, 
         ))
     results.sort(key=lambda r: r.score, reverse=True)
     return results[:limit]
+
+
+# ---------- 募集キャンペーン履歴 ----------
+@app.get("/api/salons/{salon_id}/campaigns", response_model=List[schemas.CampaignOut])
+def list_campaigns(salon_id: int, db: Session = Depends(get_db)):
+    salon = db.get(models.Salon, salon_id)
+    if not salon:
+        raise HTTPException(status_code=404, detail="美容室が見つかりません。")
+    return (
+        db.query(models.Campaign)
+        .filter(models.Campaign.salon_id == salon_id)
+        .order_by(models.Campaign.start_date.asc().nulls_last(), models.Campaign.campaign_no.asc().nulls_last())
+        .all()
+    )
+
+
+@app.post("/api/salons/{salon_id}/campaigns", response_model=schemas.CampaignOut)
+def create_campaign(salon_id: int, payload: schemas.CampaignInput, db: Session = Depends(get_db),
+                     _admin: models.AdminUser = Depends(get_current_admin)):
+    salon = db.get(models.Salon, salon_id)
+    if not salon:
+        raise HTTPException(status_code=404, detail="美容室が見つかりません。")
+    campaign = models.Campaign(salon_id=salon_id, **payload.model_dump())
+    db.add(campaign)
+    db.commit()
+    db.refresh(campaign)
+    return campaign
+
+
+@app.put("/api/campaigns/{campaign_id}", response_model=schemas.CampaignOut)
+def update_campaign(campaign_id: int, payload: schemas.CampaignInput, db: Session = Depends(get_db),
+                     _admin: models.AdminUser = Depends(get_current_admin)):
+    campaign = db.get(models.Campaign, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="キャンペーンが見つかりません。")
+    for key, value in payload.model_dump().items():
+        setattr(campaign, key, value)
+    db.commit()
+    db.refresh(campaign)
+    return campaign
+
+
+@app.delete("/api/campaigns/{campaign_id}")
+def delete_campaign(campaign_id: int, db: Session = Depends(get_db),
+                     _admin: models.AdminUser = Depends(get_current_admin)):
+    campaign = db.get(models.Campaign, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="キャンペーンが見つかりません。")
+    db.delete(campaign)
+    db.commit()
+    return {"ok": True}
+
+
+# ---------- エリア別レポート（営業資料用：実績一覧・予想募集人数） ----------
+@app.get("/api/areas/report", response_model=schemas.AreaReport)
+def area_report(q: str = Query(..., min_length=1), db: Session = Depends(get_db)):
+    salons = db.query(models.Salon).filter(
+        or_(models.Salon.address.ilike(f"%{q}%"), models.Salon.station.ilike(f"%{q}%"))
+    ).all()
+
+    salon_results = []
+    all_applicant_counts: List[int] = []
+    menu_buckets: dict[str, List[int]] = {}
+
+    for salon in salons:
+        campaigns = sorted(
+            salon.campaigns,
+            key=lambda c: (c.start_date is None, c.start_date, c.campaign_no or 0),
+        )
+        applicant_counts = [c.applicant_count for c in campaigns if c.applicant_count is not None]
+        avg = round(sum(applicant_counts) / len(applicant_counts), 1) if applicant_counts else None
+        all_applicant_counts.extend(applicant_counts)
+
+        for c in campaigns:
+            if c.applicant_count is None or not c.menu:
+                continue
+            for tag in c.menu.split(","):
+                tag = tag.strip()
+                if tag:
+                    menu_buckets.setdefault(tag, []).append(c.applicant_count)
+
+        salon_results.append(schemas.SalonWithCampaigns(
+            salon=schemas.SalonOut.model_validate(salon),
+            campaigns=[schemas.CampaignOut.model_validate(c) for c in campaigns],
+            avg_applicants=avg,
+            campaign_count=len(campaigns),
+        ))
+
+    def _median(values: List[int]) -> Optional[float]:
+        if not values:
+            return None
+        s = sorted(values)
+        n = len(s)
+        mid = n // 2
+        return float(s[mid]) if n % 2 else round((s[mid - 1] + s[mid]) / 2, 1)
+
+    prediction = schemas.AreaPrediction(
+        sample_size=len(all_applicant_counts),
+        avg_applicants=round(sum(all_applicant_counts) / len(all_applicant_counts), 1) if all_applicant_counts else None,
+        median_applicants=_median(all_applicant_counts),
+        by_menu={tag: round(sum(vals) / len(vals), 1) for tag, vals in menu_buckets.items()},
+    )
+
+    return schemas.AreaReport(query=q, salons=salon_results, prediction=prediction)
 
 
 # ---------- route / station ----------

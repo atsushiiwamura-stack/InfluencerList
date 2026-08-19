@@ -57,6 +57,7 @@ interface AppState {
   uploadModalOpen: boolean;
   salonModalOpen: boolean;
   editingSalon: Salon | null;
+  areaReportOpen: boolean;
 
   fetchMeta: () => Promise<void>;
   fetchInfluencers: () => Promise<void>;
@@ -81,6 +82,7 @@ interface AppState {
   setFilterPopoverOpen: (open: boolean) => void;
   setLoginModalOpen: (open: boolean) => void;
   setUploadModalOpen: (open: boolean) => void;
+  setAreaReportOpen: (open: boolean) => void;
   openAddSalonModal: () => void;
   openEditSalonModal: (salon: Salon) => void;
   closeSalonModal: () => void;
@@ -123,6 +125,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   uploadModalOpen: false,
   salonModalOpen: false,
   editingSalon: null,
+  areaReportOpen: false,
 
   fetchMeta: async () => {
     try {
@@ -239,6 +242,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setFilterPopoverOpen: (open) => set({ filterPopoverOpen: open }),
   setUploadModalOpen: (open) => set({ uploadModalOpen: open }),
+  setAreaReportOpen: (open) => set({ areaReportOpen: open }),
   setLoginModalOpen: (open) => set({ loginModalOpen: open }),
   openAddSalonModal: () => set({ salonModalOpen: true, editingSalon: null }),
   openEditSalonModal: (salon) => set({ salonModalOpen: true, editingSalon: salon }),

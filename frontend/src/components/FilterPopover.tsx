@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { useAppStore } from "../store/useAppStore";
+import { useDebouncedCallback } from "../utils/useDebouncedCallback";
 
 export default function FilterPopover() {
   const open = useAppStore((s) => s.filterPopoverOpen);
@@ -122,14 +124,24 @@ function NumberField({
   onChange: (v: number | null) => void;
   placeholder?: string;
 }) {
+  // 1文字打つたびにAPIを叩くと重くなるため、入力中は見た目だけ即時反映し、
+  // 実際のフィルター確定（=API呼び出し）は入力が止まってから行う。
+  const [local, setLocal] = useState(value ?? "");
+  useEffect(() => setLocal(value ?? ""), [value]);
+  const debouncedCommit = useDebouncedCallback((v: number | null) => onChange(v), 450);
+
   return (
     <label className="block flex-1">
       <span className="block text-xs text-slate-500 dark:text-slate-400 mb-1">{label}</span>
       <input
         type="number"
-        value={value ?? ""}
+        value={local}
         placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
+        onChange={(e) => {
+          const raw = e.target.value;
+          setLocal(raw);
+          debouncedCommit(raw === "" ? null : Number(raw));
+        }}
         className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm px-2.5 py-1.5 text-slate-700 dark:text-slate-200"
       />
     </label>
@@ -147,14 +159,21 @@ function TextField({
   onChange: (v: string) => void;
   placeholder?: string;
 }) {
+  const [local, setLocal] = useState(value);
+  useEffect(() => setLocal(value), [value]);
+  const debouncedCommit = useDebouncedCallback((v: string) => onChange(v), 450);
+
   return (
     <label className="block">
       <span className="block text-xs text-slate-500 dark:text-slate-400 mb-1">{label}</span>
       <input
         type="text"
-        value={value}
+        value={local}
         placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          setLocal(e.target.value);
+          debouncedCommit(e.target.value);
+        }}
         className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm px-2.5 py-1.5 text-slate-700 dark:text-slate-200"
       />
     </label>

@@ -8,6 +8,9 @@ import type {
   UploadResult,
   InfluencerFilters,
   SalonInput,
+  Campaign,
+  CampaignInput,
+  AreaReport,
 } from "../types";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
@@ -119,4 +122,28 @@ export const api = {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
     }),
+
+  getCampaigns: (salonId: number) => request<Campaign[]>(`/api/salons/${salonId}/campaigns`),
+
+  createCampaign: (salonId: number, payload: CampaignInput, token: string) =>
+    request<Campaign>(`/api/salons/${salonId}/campaigns`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+
+  updateCampaign: (campaignId: number, payload: CampaignInput, token: string) =>
+    request<Campaign>(`/api/campaigns/${campaignId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+
+  deleteCampaign: (campaignId: number, token: string) =>
+    request<{ ok: boolean }>(`/api/campaigns/${campaignId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+
+  getAreaReport: (q: string) => request<AreaReport>(`/api/areas/report?q=${encodeURIComponent(q)}`),
 };
