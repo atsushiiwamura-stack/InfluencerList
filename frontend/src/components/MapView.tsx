@@ -7,7 +7,11 @@ import { influencerIcon, salonIcon, salonIconSelected, createClusterIcon } from 
 import { influencerTooltipHtml } from "./tooltipHtml";
 import type { Influencer, Salon } from "../types";
 
-const JAPAN_CENTER: [number, number] = [36.2048, 138.2529];
+// 沖縄・小笠原まで含む日本全体がちょうど収まる範囲。この外にはパンできない。
+const JAPAN_BOUNDS: [[number, number], [number, number]] = [
+  [20.0, 122.0],
+  [46.5, 150.5],
+];
 
 /**
  * インフルエンサーは1万件超になるため、react-leafletのMarker/Tooltipを
@@ -22,7 +26,12 @@ function InfluencerClusterLayer({ influencers, salons }: { influencers: Influenc
   useEffect(() => {
     const group = L.markerClusterGroup({
       chunkedLoading: true,
-      maxClusterRadius: 50,
+      chunkInterval: 50,
+      chunkDelay: 30,
+      maxClusterRadius: 60,
+      spiderfyOnMaxZoom: true,
+      disableClusteringAtZoom: 16,
+      animate: true,
       iconCreateFunction: createClusterIcon("influencer") as any,
     });
     groupRef.current = group;
@@ -104,20 +113,36 @@ export default function MapView() {
   const showInfluencers = useAppStore((s) => s.showInfluencers);
   const selectedSalonId = useAppStore((s) => s.selectedSalonId);
   const focusSalon = useAppStore((s) => s.focusSalon);
+  const darkMode = useAppStore((s) => s.darkMode);
+
+  // CARTOの無料ベースマップ（APIキー不要）。OSM標準タイルより配色がフラットで
+  // 上に重ねるピンク/青/オレンジのピンが際立つため、SaaSダッシュボード的な
+  // 見やすさになる。ダークモード時は専用のダークタイルに切り替える
+  // （CSSフィルターでの疑似ダーク化はにじんで汚くなるため使わない）。
+  const tileUrl = darkMode
+    ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+    : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
 
   return (
     <MapContainer
-      center={JAPAN_CENTER}
-      zoom={6}
+      bounds={JAPAN_BOUNDS}
+      maxBounds={JAPAN_BOUNDS}
+      maxBoundsViscosity={1.0}
       minZoom={5}
       maxZoom={18}
       className="h-full w-full"
       zoomControl={false}
       attributionControl={true}
+      preferCanvas
     >
       <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        key={darkMode ? "dark" : "light"}
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+        url={tileUrl}
+        subdomains="abcd"
+        noWrap
+        bounds={JAPAN_BOUNDS}
+        detectRetina
       />
       <MapResizeHandler />
       <FocusHandler />

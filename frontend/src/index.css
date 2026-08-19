@@ -35,10 +35,6 @@ body {
   background: #0f172a;
 }
 
-.dark .leaflet-tile {
-  filter: brightness(0.75) contrast(1.05) saturate(0.85) invert(1) hue-rotate(180deg);
-}
-
 .leaflet-popup-content-wrapper,
 .leaflet-tooltip {
   border-radius: 14px !important;
