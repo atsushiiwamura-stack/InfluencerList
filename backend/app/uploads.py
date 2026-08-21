@@ -1,7 +1,7 @@
 """CSV / Excel アップロードの読み込み・正規化処理。"""
 import io
 from datetime import datetime, timezone
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 import pandas as pd
 
@@ -53,6 +53,20 @@ def _clean(value) -> Any:
     return value
 
 
+def _to_date(value) -> Optional[str]:
+    """様々な日付表記(2026-03-01, 2026/3/1, Excelの日付セル等)をISO文字列に正規化する。"""
+    cleaned = _clean(value)
+    if cleaned is None:
+        return None
+    try:
+        ts = pd.to_datetime(cleaned)
+        if pd.isna(ts):
+            return None
+        return ts.date().isoformat()
+    except (ValueError, TypeError):
+        return None
+
+
 def parse_influencer_rows(content: bytes, filename: str) -> List[Dict[str, Any]]:
     df = _read_table(content, filename)
     rows = []
@@ -81,6 +95,29 @@ def parse_influencer_rows(content: bytes, filename: str) -> List[Dict[str, Any]]
             "location_precision": precision,
             "source": "csv_upload",
             "updated_at": datetime.now(timezone.utc),
+        })
+    return rows
+
+
+def parse_campaign_rows(content: bytes, filename: str) -> List[Dict[str, Any]]:
+    """salon_name列でサロン名と紐付けるキャンペーン実績CSV/Excelを読み込む。
+    サロン名は main.py 側で実サロンとの突合を行うため、ここではまだ紐付けない。"""
+    df = _read_table(content, filename)
+    rows = []
+    for _, r in df.iterrows():
+        salon_name = _clean(r.get("salon_name")) or _clean(r.get("salon"))
+        if not salon_name:
+            continue
+        rows.append({
+            "salon_name": str(salon_name).strip(),
+            "campaign_no": _to_int(r.get("campaign_no")),
+            "title": _clean(r.get("title")),
+            "menu": _clean(r.get("menu")),
+            "start_date": _to_date(r.get("start_date")),
+            "end_date": _to_date(r.get("end_date")),
+            "applicant_count": _to_int(r.get("applicant_count")),
+            "hired_count": _to_int(r.get("hired_count")),
+            "notes": _clean(r.get("notes")),
         })
     return rows
 

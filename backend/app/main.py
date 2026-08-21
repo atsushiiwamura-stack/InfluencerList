@@ -12,7 +12,7 @@ from .auth import (
     ensure_seed_admin, authenticate, create_access_token, get_current_admin,
 )
 from .scoring import haversine_m, walking_minutes, composite_score
-from .uploads import parse_influencer_rows, parse_salon_rows
+from .uploads import parse_influencer_rows, parse_salon_rows, parse_campaign_rows
 from .station import get_nearby_stations
 from .geocode import resolve_from_address
 
@@ -288,6 +288,47 @@ def salon_ranking(salon_id: int, limit: int = 10, max_distance_km: float = 5.0, 
 
 
 # ---------- 募集キャンペーン履歴 ----------
+@app.post("/api/campaigns/upload", response_model=schemas.UploadResult)
+async def upload_campaigns(file: UploadFile = File(...), db: Session = Depends(get_db),
+                            _admin: models.AdminUser = Depends(get_current_admin)):
+    content = await file.read()
+    try:
+        rows = parse_campaign_rows(content, file.filename)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"ファイルの解析に失敗しました: {exc}")
+
+    # サロン名(前後空白除去・大文字小文字無視)でのマッチング用インデックス
+    salons_by_name = {s.name.strip().lower(): s for s in db.query(models.Salon).all()}
+
+    inserted, updated, skipped, errors = 0, 0, 0, []
+    for row in rows:
+        salon_name = row.pop("salon_name")
+        salon = salons_by_name.get(salon_name.strip().lower())
+        if not salon:
+            skipped += 1
+            errors.append(f"「{salon_name}」に一致する美容室が見つかりません（先に美容室を登録してください）")
+            continue
+        try:
+            existing = None
+            if row.get("campaign_no") is not None:
+                existing = db.query(models.Campaign).filter(
+                    models.Campaign.salon_id == salon.id,
+                    models.Campaign.campaign_no == row["campaign_no"],
+                ).first()
+            if existing:
+                for k, v in row.items():
+                    setattr(existing, k, v)
+                updated += 1
+            else:
+                db.add(models.Campaign(salon_id=salon.id, **row))
+                inserted += 1
+        except Exception as exc:  # noqa: BLE001
+            skipped += 1
+            errors.append(f"{salon_name}: {exc}")
+    db.commit()
+    return schemas.UploadResult(inserted=inserted, updated=updated, skipped=skipped, errors=errors)
+
+
 @app.get("/api/salons/{salon_id}/campaigns", response_model=List[schemas.CampaignOut])
 def list_campaigns(salon_id: int, db: Session = Depends(get_db)):
     salon = db.get(models.Salon, salon_id)

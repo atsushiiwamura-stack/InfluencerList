@@ -9,7 +9,7 @@ export default function CsvUploadModal() {
   const authToken = useAppStore((s) => s.authToken);
   const fetchAll = useAppStore((s) => s.fetchAll);
 
-  const [kind, setKind] = useState<"influencer" | "salon">("influencer");
+  const [kind, setKind] = useState<"influencer" | "salon" | "campaign">("influencer");
   const [result, setResult] = useState<UploadResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -24,7 +24,12 @@ export default function CsvUploadModal() {
     setError(null);
     setResult(null);
     try {
-      const res = kind === "influencer" ? await api.uploadInfluencers(file, authToken) : await api.uploadSalons(file, authToken);
+      const res =
+        kind === "influencer"
+          ? await api.uploadInfluencers(file, authToken)
+          : kind === "salon"
+          ? await api.uploadSalons(file, authToken)
+          : await api.uploadCampaigns(file, authToken);
       setResult(res);
       await fetchAll();
     } catch (err) {
@@ -63,6 +68,12 @@ export default function CsvUploadModal() {
           >
             美容室
           </button>
+          <button
+            onClick={() => setKind("campaign")}
+            className={`flex-1 rounded-lg text-sm py-2 border ${kind === "campaign" ? "bg-amber-50 border-amber-300 text-amber-700" : "border-slate-200 text-slate-400"}`}
+          >
+            キャンペーン実績
+          </button>
         </div>
 
         <input
@@ -74,16 +85,25 @@ export default function CsvUploadModal() {
 
         <details className="text-xs text-slate-400 mb-3">
           <summary className="cursor-pointer">必要な列（カラム）を見る</summary>
-          {kind === "influencer" ? (
+          {kind === "influencer" && (
             <p className="mt-1">
               name, instagram_url, followers, category, age, gender, prefecture, address, latitude, longitude
               <br />
               （latitude/longitude が無い場合は address から市区町村を自動推定して概算配置します）
             </p>
-          ) : (
+          )}
+          {kind === "salon" && (
             <p className="mt-1">
               name, address, station, line, category, instagram, latitude, longitude, price_range,
               business_hours, is_premium, model_recruit_experience, google_map_url
+            </p>
+          )}
+          {kind === "campaign" && (
+            <p className="mt-1">
+              salon_name, campaign_no, title, menu, start_date, end_date, applicant_count, hired_count, notes
+              <br />
+              （salon_name は登録済みの美容室名と完全一致させてください。一致しない行はスキップされ、
+              結果にエラーとして表示されます。campaign_no が既存レコードと一致する場合は上書き更新されます）
             </p>
           )}
         </details>

@@ -103,6 +103,16 @@ export const api = {
     });
   },
 
+  uploadCampaigns: (file: File, token: string) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<UploadResult>("/api/campaigns/upload", {
+      method: "POST",
+      body: form,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  },
+
   createSalon: (payload: SalonInput, token: string) =>
     request<Salon>("/api/salons", {
       method: "POST",
