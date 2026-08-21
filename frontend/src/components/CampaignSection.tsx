@@ -15,7 +15,7 @@ const EMPTY: CampaignInput = {
   notes: "",
 };
 
-const MENU_TAGS = ["カット", "カラー", "パーマ", "縮毛矯正", "眉カット", "トリートメント", "ヘッドスパ"];
+const MENU_TAGS = ["カット", "カラー", "パーマ", "縮毛矯正", "眉カット", "トリートメント", "ヘッドスパ", "アイ", "マユ", "整骨院"];
 
 export default function CampaignSection({ salonId }: { salonId: number }) {
   const authToken = useAppStore((s) => s.authToken);
@@ -26,6 +26,7 @@ export default function CampaignSection({ salonId }: { salonId: number }) {
   const [form, setForm] = useState<CampaignInput>(EMPTY);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [customTag, setCustomTag] = useState("");
 
   const reload = () => {
     setLoading(true);
@@ -65,6 +66,16 @@ export default function CampaignSection({ salonId }: { salonId: number }) {
     const current = (form.menu || "").split(",").map((t) => t.trim()).filter(Boolean);
     const next = current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag];
     setForm((f) => ({ ...f, menu: next.join(",") }));
+  };
+
+  const addCustomTag = () => {
+    const tag = customTag.trim();
+    if (!tag) return;
+    const current = (form.menu || "").split(",").map((t) => t.trim()).filter(Boolean);
+    if (!current.includes(tag)) {
+      setForm((f) => ({ ...f, menu: [...current, tag].join(",") }));
+    }
+    setCustomTag("");
   };
 
   const submit = async () => {
@@ -198,6 +209,43 @@ export default function CampaignSection({ salonId }: { salonId: number }) {
                   </button>
                 );
               })}
+              {(form.menu || "")
+                .split(",")
+                .map((t) => t.trim())
+                .filter((t) => t && !MENU_TAGS.includes(t))
+                .map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => toggleMenuTag(tag)}
+                    className="text-[11px] px-2 py-1 rounded-full border bg-brand-600 text-white border-brand-600"
+                    title="クリックで削除"
+                  >
+                    {tag} ✕
+                  </button>
+                ))}
+            </div>
+            <div className="flex gap-1.5 mt-1.5">
+              <input
+                type="text"
+                value={customTag}
+                onChange={(e) => setCustomTag(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addCustomTag();
+                  }
+                }}
+                placeholder="その他（自由入力、例: ネイル）"
+                className="flex-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[11px] px-2 py-1.5 text-slate-700 dark:text-slate-200"
+              />
+              <button
+                type="button"
+                onClick={addCustomTag}
+                className="text-[11px] px-3 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-300"
+              >
+                追加
+              </button>
             </div>
           </div>
           <div className="flex gap-2">
