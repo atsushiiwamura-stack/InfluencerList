@@ -158,4 +158,6 @@ export interface AreaReport {
   salons: SalonWithCampaigns[];
   prediction: AreaPrediction;
   total_nearby_influencer_count: number;
+  matched_prefecture: string | null;
+  prefecture_influencer_count: number | null;
 }

@@ -110,6 +110,21 @@ export default function AreaReportPanel() {
 
         {report && (
           <>
+            {report.matched_prefecture && (
+              <div className="rounded-xl bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 p-3">
+                <div className="text-[10px] text-violet-700 dark:text-violet-300 font-semibold mb-1">
+                  「{report.matched_prefecture}」全体のインフルエンサー在籍数
+                </div>
+                <div className="text-2xl font-bold text-slate-800 dark:text-slate-100">
+                  {report.prefecture_influencer_count?.toLocaleString()}
+                  <span className="text-xs font-normal text-slate-500 dark:text-slate-400 ml-1">人</span>
+                </div>
+                <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                  都道府県名で検索されたため、半径円ではなく{report.matched_prefecture}在住の全人数を集計しています
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-xl bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 p-3">
                 <div className="text-[10px] text-brand-700 dark:text-brand-300 font-semibold mb-1">
@@ -132,7 +147,7 @@ export default function AreaReportPanel() {
 
               <div className="rounded-xl bg-pink-50 dark:bg-pink-900/20 border border-pink-200 dark:border-pink-800 p-3">
                 <div className="text-[10px] text-pink-700 dark:text-pink-300 font-semibold mb-1">
-                  半径{report.radius_km}km内インフルエンサー
+                  該当店舗の半径{report.radius_km}km内
                 </div>
                 <div className="text-xl font-bold text-slate-800 dark:text-slate-100">
                   {report.total_nearby_influencer_count.toLocaleString()}

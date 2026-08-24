@@ -17,7 +17,7 @@ from .auth import (
 from .scoring import haversine_m, walking_minutes, composite_score
 from .uploads import parse_influencer_rows, parse_salon_rows, parse_campaign_rows
 from .station import get_nearby_stations
-from .geocode import resolve_from_address
+from .geocode import resolve_from_address, normalize_prefecture, _ALL_PREFECTURES
 
 Base.metadata.create_all(bind=engine)
 with SessionLocal() as _db:
@@ -444,6 +444,19 @@ def area_report(
         or_(models.Salon.address.ilike(f"%{q}%"), models.Salon.station.ilike(f"%{q}%"))
     ).all()
 
+    # クエリが都道府県名そのもの（「東京都」「大阪府」等）の場合、店舗周辺の
+    # 半径円だけでは対象エリア全体をカバーできない（店舗の近くの人しか
+    # 数えられない）ため、その都道府県に住んでいる全インフルエンサー数を
+    # 別途カウントして返す。
+    matched_prefecture = normalize_prefecture(q.strip())
+    if matched_prefecture not in _ALL_PREFECTURES:
+        matched_prefecture = None
+    prefecture_influencer_count = None
+    if matched_prefecture:
+        prefecture_influencer_count = db.query(models.Influencer).filter(
+            models.Influencer.prefecture == matched_prefecture
+        ).count()
+
     # 緯度経度のみの軽量クエリで、周辺インフルエンサー数の判定に使う
     influencer_points = db.query(
         models.Influencer.id, models.Influencer.latitude, models.Influencer.longitude
@@ -506,6 +519,8 @@ def area_report(
         salons=salon_results,
         prediction=prediction,
         total_nearby_influencer_count=len(nearby_ids_union),
+        matched_prefecture=matched_prefecture,
+        prefecture_influencer_count=prefecture_influencer_count,
     )
 
 

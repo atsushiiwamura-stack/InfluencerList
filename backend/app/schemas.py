@@ -149,3 +149,5 @@ class AreaReport(BaseModel):
     salons: List[SalonWithCampaigns]
     prediction: AreaPrediction
     total_nearby_influencer_count: int = 0
+    matched_prefecture: Optional[str] = None  # 都道府県名で検索した場合にセットされる
+    prefecture_influencer_count: Optional[int] = None  # その都道府県全体の在籍数
