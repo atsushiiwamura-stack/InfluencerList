@@ -58,6 +58,8 @@ interface AppState {
   salonModalOpen: boolean;
   editingSalon: Salon | null;
   areaReportOpen: boolean;
+  areaReportCircles: [number, number][];
+  areaReportRadiusM: number | null;
 
   fetchMeta: () => Promise<void>;
   fetchInfluencers: () => Promise<void>;
@@ -73,6 +75,7 @@ interface AppState {
   logout: () => void;
 
   focusSalon: (id: number) => Promise<void>;
+  focusBounds: (points: [number, number][]) => void;
   focusInfluencer: (id: number) => Promise<void>;
   clearSelection: () => void;
 
@@ -83,6 +86,8 @@ interface AppState {
   setLoginModalOpen: (open: boolean) => void;
   setUploadModalOpen: (open: boolean) => void;
   setAreaReportOpen: (open: boolean) => void;
+  setAreaReportCircles: (centers: [number, number][], radiusM: number) => void;
+  clearAreaReportCircles: () => void;
   openAddSalonModal: () => void;
   openEditSalonModal: (salon: Salon) => void;
   closeSalonModal: () => void;
@@ -126,6 +131,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   salonModalOpen: false,
   editingSalon: null,
   areaReportOpen: false,
+  areaReportCircles: [],
+  areaReportRadiusM: null,
 
   fetchMeta: async () => {
     try {
@@ -209,6 +216,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  focusBounds: (points) => {
+    if (points.length === 0) return;
+    const [firstLat, firstLon] = points[0];
+    set({ focusRequest: { lat: firstLat, lon: firstLon, bounds: points, key: Date.now() } });
+  },
+
   focusInfluencer: async (id) => {
     const influencer = get().influencers.find((i) => i.id === id);
     if (!influencer) return;
@@ -242,7 +255,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setFilterPopoverOpen: (open) => set({ filterPopoverOpen: open }),
   setUploadModalOpen: (open) => set({ uploadModalOpen: open }),
-  setAreaReportOpen: (open) => set({ areaReportOpen: open }),
+  setAreaReportOpen: (open) => {
+    set({ areaReportOpen: open });
+    if (!open) set({ areaReportCircles: [], areaReportRadiusM: null });
+  },
+  setAreaReportCircles: (centers, radiusM) => set({ areaReportCircles: centers, areaReportRadiusM: radiusM }),
+  clearAreaReportCircles: () => set({ areaReportCircles: [], areaReportRadiusM: null }),
   setLoginModalOpen: (open) => set({ loginModalOpen: open }),
   openAddSalonModal: () => set({ salonModalOpen: true, editingSalon: null }),
   openEditSalonModal: (salon) => set({ salonModalOpen: true, editingSalon: salon }),
