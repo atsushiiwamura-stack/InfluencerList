@@ -10,27 +10,17 @@ export default function FloatingControls() {
   const openAddSalonModal = useAppStore((s) => s.openAddSalonModal);
   const filterPopoverOpen = useAppStore((s) => s.filterPopoverOpen);
   const setFilterPopoverOpen = useAppStore((s) => s.setFilterPopoverOpen);
-  const areaReportOpen = useAppStore((s) => s.areaReportOpen);
-  const setAreaReportOpen = useAppStore((s) => s.setAreaReportOpen);
   const meta = useAppStore((s) => s.meta);
 
   return (
     <div className="absolute top-4 right-4 z-[500] flex items-center gap-2">
       {meta && (
-        <div className="hidden md:flex items-center gap-1 bg-white/90 dark:bg-slate-900/90 rounded-full shadow-lg border border-slate-200/70 dark:border-slate-700 px-3 py-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+        <div className="hidden md:flex items-center gap-1 bg-white/90 dark:bg-slate-900/90 rounded-full shadow-lg border border-slate-200/70 dark:border-slate-700 px-3 h-11 text-[11px] text-slate-500 dark:text-slate-400">
           <span>📷 {meta.influencer_count.toLocaleString()}</span>
           <span className="mx-1">・</span>
           <span>✂️ {meta.salon_count.toLocaleString()}</span>
         </div>
       )}
-
-      <IconButton
-        active={areaReportOpen}
-        label="エリアレポート"
-        onClick={() => setAreaReportOpen(!areaReportOpen)}
-      >
-        📊
-      </IconButton>
 
       <IconButton
         active={filterPopoverOpen}
@@ -49,14 +39,14 @@ export default function FloatingControls() {
       {authToken ? (
         <button
           onClick={logout}
-          className="text-xs rounded-full bg-white dark:bg-slate-900 shadow-lg border border-slate-200/70 dark:border-slate-700 px-3.5 h-9 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+          className="text-sm rounded-full bg-white dark:bg-slate-900 shadow-lg border border-slate-200/70 dark:border-slate-700 px-4 h-11 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
         >
           ログアウト
         </button>
       ) : (
         <button
           onClick={() => setLoginModalOpen(true)}
-          className="text-xs rounded-full bg-brand-600 text-white px-3.5 h-9 font-medium shadow-lg"
+          className="text-sm rounded-full bg-brand-600 text-white px-4 h-11 font-medium shadow-lg"
         >
           管理者ログイン
         </button>
@@ -87,7 +77,7 @@ function IconButton({
       onClick={onClick}
       aria-label={label}
       title={label}
-      className={`w-9 h-9 rounded-full shadow-lg border flex items-center justify-center text-sm transition ${
+      className={`w-11 h-11 rounded-full shadow-lg border flex items-center justify-center text-base transition ${
         accent
           ? "bg-brand-600 border-brand-600 text-white"
           : active

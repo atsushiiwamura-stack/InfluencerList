@@ -133,6 +133,7 @@ class SalonWithCampaigns(BaseModel):
     campaigns: List[CampaignOut]
     avg_applicants: Optional[float] = None
     campaign_count: int
+    nearby_influencer_count: int = 0
 
 
 class AreaPrediction(BaseModel):
@@ -144,5 +145,7 @@ class AreaPrediction(BaseModel):
 
 class AreaReport(BaseModel):
     query: str
+    radius_km: float
     salons: List[SalonWithCampaigns]
     prediction: AreaPrediction
+    total_nearby_influencer_count: int = 0

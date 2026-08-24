@@ -69,6 +69,17 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
 
 
 # ---------- influencers ----------
+# RenderのAPIサーバーとSupabase(東京リージョン)が地理的に離れており、
+# 1万件超をDBから毎回取得・シリアライズすると数秒かかる。フィルタ無しの
+# 全件取得（画面表示時の初回ロードで必ず発生する）はプロセス内メモリに
+# キャッシュし、書き込み（CSVアップロード等）があった時だけ破棄する。
+_influencer_cache: dict = {"data": None}
+
+
+def _invalidate_influencer_cache():
+    _influencer_cache["data"] = None
+
+
 @app.get("/api/influencers", response_model=List[schemas.InfluencerOut])
 def list_influencers(
     prefecture: Optional[str] = None,
@@ -84,6 +95,14 @@ def list_influencers(
     limit: int = Query(20000, le=20000),
     db: Session = Depends(get_db),
 ):
+    is_unfiltered = not any([
+        prefecture, category, gender, min_followers, min_age, max_age,
+        beauty_only, tokyo23_only, good_access_only, q,
+    ]) and limit >= 20000
+
+    if is_unfiltered and _influencer_cache["data"] is not None:
+        return _influencer_cache["data"]
+
     query = db.query(models.Influencer)
     if prefecture:
         query = query.filter(models.Influencer.prefecture == prefecture)
@@ -111,7 +130,13 @@ def list_influencers(
     if good_access_only:
         query = query.filter(models.Influencer.city.in_(GOOD_ACCESS_CITIES))
 
-    return query.limit(limit).all()
+    results = query.limit(limit).all()
+
+    if is_unfiltered:
+        _influencer_cache["data"] = [schemas.InfluencerOut.model_validate(r) for r in results]
+        return _influencer_cache["data"]
+
+    return results
 
 
 @app.post("/api/influencers/upload", response_model=schemas.UploadResult)
@@ -142,6 +167,7 @@ async def upload_influencers(file: UploadFile = File(...), db: Session = Depends
             skipped += 1
             errors.append(f"{row.get('name', '?')}: {exc}")
     db.commit()
+    _invalidate_influencer_cache()
     return schemas.UploadResult(inserted=inserted, updated=updated, skipped=skipped, errors=errors)
 
 
@@ -379,16 +405,26 @@ def delete_campaign(campaign_id: int, db: Session = Depends(get_db),
     return {"ok": True}
 
 
-# ---------- エリア別レポート（営業資料用：実績一覧・予想募集人数） ----------
+# ---------- エリア別レポート（営業資料用：実績一覧・予想募集人数・周辺インフルエンサー数） ----------
 @app.get("/api/areas/report", response_model=schemas.AreaReport)
-def area_report(q: str = Query(..., min_length=1), db: Session = Depends(get_db)):
+def area_report(
+    q: str = Query(..., min_length=1),
+    radius_km: float = Query(2.0, ge=0.1, le=20.0),
+    db: Session = Depends(get_db),
+):
     salons = db.query(models.Salon).filter(
         or_(models.Salon.address.ilike(f"%{q}%"), models.Salon.station.ilike(f"%{q}%"))
+    ).all()
+
+    # 緯度経度のみの軽量クエリで、周辺インフルエンサー数の判定に使う
+    influencer_points = db.query(
+        models.Influencer.id, models.Influencer.latitude, models.Influencer.longitude
     ).all()
 
     salon_results = []
     all_applicant_counts: List[int] = []
     menu_buckets: dict[str, List[int]] = {}
+    nearby_ids_union: set = set()
 
     for salon in salons:
         campaigns = sorted(
@@ -407,11 +443,18 @@ def area_report(q: str = Query(..., min_length=1), db: Session = Depends(get_db)
                 if tag:
                     menu_buckets.setdefault(tag, []).append(c.applicant_count)
 
+        nearby_ids = {
+            inf_id for inf_id, lat, lon in influencer_points
+            if haversine_m(salon.latitude, salon.longitude, lat, lon) <= radius_km * 1000
+        }
+        nearby_ids_union |= nearby_ids
+
         salon_results.append(schemas.SalonWithCampaigns(
             salon=schemas.SalonOut.model_validate(salon),
             campaigns=[schemas.CampaignOut.model_validate(c) for c in campaigns],
             avg_applicants=avg,
             campaign_count=len(campaigns),
+            nearby_influencer_count=len(nearby_ids),
         ))
 
     def _median(values: List[int]) -> Optional[float]:
@@ -429,7 +472,13 @@ def area_report(q: str = Query(..., min_length=1), db: Session = Depends(get_db)
         by_menu={tag: round(sum(vals) / len(vals), 1) for tag, vals in menu_buckets.items()},
     )
 
-    return schemas.AreaReport(query=q, salons=salon_results, prediction=prediction)
+    return schemas.AreaReport(
+        query=q,
+        radius_km=radius_km,
+        salons=salon_results,
+        prediction=prediction,
+        total_nearby_influencer_count=len(nearby_ids_union),
+    )
 
 
 # ---------- route / station ----------

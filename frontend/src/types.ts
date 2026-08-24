@@ -142,6 +142,7 @@ export interface SalonWithCampaigns {
   campaigns: Campaign[];
   avg_applicants: number | null;
   campaign_count: number;
+  nearby_influencer_count: number;
 }
 
 export interface AreaPrediction {
@@ -153,6 +154,8 @@ export interface AreaPrediction {
 
 export interface AreaReport {
   query: string;
+  radius_km: number;
   salons: SalonWithCampaigns[];
   prediction: AreaPrediction;
+  total_nearby_influencer_count: number;
 }

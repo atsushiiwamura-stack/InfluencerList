@@ -155,5 +155,6 @@ export const api = {
       headers: { Authorization: `Bearer ${token}` },
     }),
 
-  getAreaReport: (q: string) => request<AreaReport>(`/api/areas/report?q=${encodeURIComponent(q)}`),
+  getAreaReport: (q: string, radiusKm = 2) =>
+    request<AreaReport>(`/api/areas/report?q=${encodeURIComponent(q)}&radius_km=${radiusKm}`),
 };
