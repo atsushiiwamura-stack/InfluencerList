@@ -1,8 +1,10 @@
 import os
+import json as _json
 from typing import Optional, List
 from fastapi import FastAPI, Depends, UploadFile, File, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
@@ -71,13 +73,17 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
 # ---------- influencers ----------
 # RenderのAPIサーバーとSupabase(東京リージョン)が地理的に離れており、
 # 1万件超をDBから毎回取得・シリアライズすると数秒かかる。フィルタ無しの
-# 全件取得（画面表示時の初回ロードで必ず発生する）はプロセス内メモリに
-# キャッシュし、書き込み（CSVアップロード等）があった時だけ破棄する。
-_influencer_cache: dict = {"data": None}
+# 全件取得（画面表示時の初回ロードで必ず発生する）は「完成済みのJSON文字列」を
+# プロセス内メモリにキャッシュする。Pydanticオブジェクトのリストをキャッシュ
+# するだけだとFastAPIがresponse_model経由で毎回JSONへ再シリアライズしてしまい
+# （非力なCPUではこれ自体が1秒以上かかる）効果が薄いため、シリアライズ後の
+# バイト列を直接返して丸ごとスキップする。書き込み（CSVアップロード等）が
+# あった時だけ破棄する。
+_influencer_cache: dict = {"json": None}
 
 
 def _invalidate_influencer_cache():
-    _influencer_cache["data"] = None
+    _influencer_cache["json"] = None
 
 
 @app.get("/api/influencers", response_model=List[schemas.InfluencerOut])
@@ -100,8 +106,8 @@ def list_influencers(
         beauty_only, tokyo23_only, good_access_only, q,
     ]) and limit >= 20000
 
-    if is_unfiltered and _influencer_cache["data"] is not None:
-        return _influencer_cache["data"]
+    if is_unfiltered and _influencer_cache["json"] is not None:
+        return Response(content=_influencer_cache["json"], media_type="application/json")
 
     query = db.query(models.Influencer)
     if prefecture:
@@ -133,8 +139,10 @@ def list_influencers(
     results = query.limit(limit).all()
 
     if is_unfiltered:
-        _influencer_cache["data"] = [schemas.InfluencerOut.model_validate(r) for r in results]
-        return _influencer_cache["data"]
+        payload = [schemas.InfluencerOut.model_validate(r).model_dump(mode="json") for r in results]
+        json_bytes = _json.dumps(payload).encode("utf-8")
+        _influencer_cache["json"] = json_bytes
+        return Response(content=json_bytes, media_type="application/json")
 
     return results
 
