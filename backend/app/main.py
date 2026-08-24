@@ -1,7 +1,8 @@
 import os
+import gzip as _gzip
 import json as _json
 from typing import Optional, List
-from fastapi import FastAPI, Depends, UploadFile, File, HTTPException, Query
+from fastapi import FastAPI, Depends, Request, UploadFile, File, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import Response
@@ -78,16 +79,20 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
 # するだけだとFastAPIがresponse_model経由で毎回JSONへ再シリアライズしてしまい
 # （非力なCPUではこれ自体が1秒以上かかる）効果が薄いため、シリアライズ後の
 # バイト列を直接返して丸ごとスキップする。書き込み（CSVアップロード等）が
-# あった時だけ破棄する。
-_influencer_cache: dict = {"json": None}
+# あった時だけ破棄する。gzip圧縮自体もCPU負荷が大きい（非力なCPUだと1秒以上
+# かかることがある）ため、圧縮後のバイト列も一緒に事前計算してキャッシュし、
+# GZipMiddlewareによる毎リクエストの再圧縮を回避する。
+_influencer_cache: dict = {"json": None, "gzip": None}
 
 
 def _invalidate_influencer_cache():
     _influencer_cache["json"] = None
+    _influencer_cache["gzip"] = None
 
 
 @app.get("/api/influencers", response_model=List[schemas.InfluencerOut])
 def list_influencers(
+    request: Request,
     prefecture: Optional[str] = None,
     category: Optional[str] = None,
     gender: Optional[str] = None,
@@ -107,6 +112,13 @@ def list_influencers(
     ]) and limit >= 20000
 
     if is_unfiltered and _influencer_cache["json"] is not None:
+        accepts_gzip = "gzip" in request.headers.get("accept-encoding", "")
+        if accepts_gzip:
+            return Response(
+                content=_influencer_cache["gzip"],
+                media_type="application/json",
+                headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding"},
+            )
         return Response(content=_influencer_cache["json"], media_type="application/json")
 
     query = db.query(models.Influencer)
@@ -142,6 +154,14 @@ def list_influencers(
         payload = [schemas.InfluencerOut.model_validate(r).model_dump(mode="json") for r in results]
         json_bytes = _json.dumps(payload).encode("utf-8")
         _influencer_cache["json"] = json_bytes
+        _influencer_cache["gzip"] = _gzip.compress(json_bytes, compresslevel=6)
+        accepts_gzip = "gzip" in request.headers.get("accept-encoding", "")
+        if accepts_gzip:
+            return Response(
+                content=_influencer_cache["gzip"],
+                media_type="application/json",
+                headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding"},
+            )
         return Response(content=json_bytes, media_type="application/json")
 
     return results
