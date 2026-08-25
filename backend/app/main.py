@@ -16,7 +16,7 @@ from .auth import (
 )
 from .scoring import haversine_m, walking_minutes, composite_score
 from .uploads import parse_influencer_rows, parse_salon_rows, parse_campaign_rows
-from .station import get_nearby_stations
+from .station import get_nearby_stations, find_stations_by_name
 from .geocode import resolve_from_address, normalize_prefecture, _ALL_PREFECTURES
 
 Base.metadata.create_all(bind=engine)
@@ -435,7 +435,7 @@ def delete_campaign(campaign_id: int, db: Session = Depends(get_db),
 
 # ---------- エリア別レポート（営業資料用：実績一覧・予想募集人数・周辺インフルエンサー数） ----------
 @app.get("/api/areas/report", response_model=schemas.AreaReport)
-def area_report(
+async def area_report(
     q: str = Query(..., min_length=1),
     radius_km: float = Query(2.0, ge=0.1, le=20.0),
     db: Session = Depends(get_db),
@@ -498,6 +498,25 @@ def area_report(
             nearby_influencer_count=len(nearby_ids),
         ))
 
+    # 美容室がまだ無いエリアでも「駅名・地名」だけでインフルエンサー分布を
+    # 調べられるように、駅名としても検索する（都道府県名の場合はスキップ）。
+    station_results: List[schemas.StationAreaResult] = []
+    if not matched_prefecture:
+        for st in await find_stations_by_name(q.strip()):
+            nearby_ids = {
+                inf_id for inf_id, lat, lon in influencer_points
+                if haversine_m(st["latitude"], st["longitude"], lat, lon) <= radius_km * 1000
+            }
+            nearby_ids_union |= nearby_ids
+            station_results.append(schemas.StationAreaResult(
+                name=st["name"],
+                prefecture=st.get("prefecture"),
+                lines=st.get("lines", []),
+                latitude=st["latitude"],
+                longitude=st["longitude"],
+                nearby_influencer_count=len(nearby_ids),
+            ))
+
     def _median(values: List[int]) -> Optional[float]:
         if not values:
             return None
@@ -521,6 +540,7 @@ def area_report(
         total_nearby_influencer_count=len(nearby_ids_union),
         matched_prefecture=matched_prefecture,
         prefecture_influencer_count=prefecture_influencer_count,
+        station_matches=station_results,
     )
 
 

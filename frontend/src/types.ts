@@ -160,4 +160,14 @@ export interface AreaReport {
   total_nearby_influencer_count: number;
   matched_prefecture: string | null;
   prefecture_influencer_count: number | null;
+  station_matches: StationAreaResult[];
+}
+
+export interface StationAreaResult {
+  name: string;
+  prefecture: string | null;
+  lines: string[];
+  latitude: number;
+  longitude: number;
+  nearby_influencer_count: number;
 }

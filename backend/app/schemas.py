@@ -143,6 +143,15 @@ class AreaPrediction(BaseModel):
     by_menu: dict = {}
 
 
+class StationAreaResult(BaseModel):
+    name: str
+    prefecture: Optional[str] = None
+    lines: List[str] = []
+    latitude: float
+    longitude: float
+    nearby_influencer_count: int = 0
+
+
 class AreaReport(BaseModel):
     query: str
     radius_km: float
@@ -151,3 +160,4 @@ class AreaReport(BaseModel):
     total_nearby_influencer_count: int = 0
     matched_prefecture: Optional[str] = None  # 都道府県名で検索した場合にセットされる
     prefecture_influencer_count: Optional[int] = None  # その都道府県全体の在籍数
+    station_matches: List[StationAreaResult] = []  # 駅名・地名一致（美容室未登録でも使える）

@@ -28,7 +28,10 @@ export default function AreaReportPanel() {
     try {
       const res = await api.getAreaReport(q.trim(), overrideRadius ?? radiusKm);
       setReport(res);
-      const centers: [number, number][] = res.salons.map((s) => [s.salon.latitude, s.salon.longitude]);
+      const centers: [number, number][] = [
+        ...res.salons.map((s) => [s.salon.latitude, s.salon.longitude] as [number, number]),
+        ...res.station_matches.map((s) => [s.latitude, s.longitude] as [number, number]),
+      ];
       if (centers.length > 0) {
         // 円が選んだ半径の分だけ画面に収まるよう、地図を自動でその範囲にフォーカスする。
         setAreaReportCircles(centers, res.radius_km * 1000);
@@ -102,9 +105,9 @@ export default function AreaReportPanel() {
 
         {!report && !loading && (
           <p className="text-xs text-slate-400 leading-relaxed">
-            エリア名を入力すると、該当する美容室・過去のキャンペーン実績から算出した「予想応募人数」、
-            そして選んだ半径内の<strong>インフルエンサー数</strong>が表示されます。地図上にはピンクの円で
-            半径が表示されるので、範囲を目視で確認できます。
+            エリア名（駅名・地名・都道府県名）を入力すると、該当する美容室があれば過去実績から算出した
+            「予想応募人数」を、そして<strong>美容室が未登録のエリアでも駅名から</strong>半径内のインフルエンサー数を
+            表示します。地図上にはピンクの円で半径が表示されるので、範囲を目視で確認できます。
           </p>
         )}
 
@@ -172,6 +175,31 @@ export default function AreaReportPanel() {
               </div>
             )}
 
+            {report.station_matches.length > 0 && (
+              <div>
+                <h3 className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1.5">
+                  一致した駅（美容室未登録エリアの目安）
+                </h3>
+                <div className="space-y-2">
+                  {report.station_matches.map((st, i) => (
+                    <div key={`${st.name}-${i}`} className="rounded-xl border border-sky-200 dark:border-sky-800 bg-sky-50/50 dark:bg-sky-900/10 p-2.5">
+                      <div className="flex items-center justify-between flex-wrap gap-1">
+                        <span className="font-semibold text-xs text-slate-800 dark:text-slate-100">
+                          🚉 {st.name}駅{st.prefecture ? `（${st.prefecture}）` : ""}
+                        </span>
+                        <span className="bg-pink-50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 rounded-full px-1.5 py-0.5 text-[10px]">
+                          📷{st.nearby_influencer_count}人
+                        </span>
+                      </div>
+                      {st.lines.length > 0 && (
+                        <div className="text-[10px] text-slate-400 mt-0.5">{st.lines.join("・")}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div>
               <h3 className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1.5">
                 該当する美容室（{report.salons.length}件）
@@ -204,7 +232,11 @@ export default function AreaReportPanel() {
                   </div>
                 ))}
                 {report.salons.length === 0 && (
-                  <p className="text-xs text-slate-400">該当する美容室が見つかりませんでした。</p>
+                  <p className="text-xs text-slate-400">
+                    {report.station_matches.length > 0
+                      ? "このエリアにはまだ美容室が登録されていません。上のインフルエンサー数を参考にしてください。"
+                      : "該当する美容室・駅が見つかりませんでした。"}
+                  </p>
                 )}
               </div>
             </div>
