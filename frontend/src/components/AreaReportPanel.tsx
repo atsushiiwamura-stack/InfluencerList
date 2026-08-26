@@ -47,12 +47,6 @@ export default function AreaReportPanel() {
     setAreaReportCircles(circles);
   }, [rows, setAreaReportCircles]);
 
-  if (!open) return null;
-
-  const updateRow = (id: string, partial: Partial<AreaRow>) => {
-    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...partial } : r)));
-  };
-
   const search = async (id: string, overrideRadius?: number) => {
     const row = rows.find((r) => r.id === id);
     if (!row || !row.query.trim()) return;
@@ -77,7 +71,16 @@ export default function AreaReportPanel() {
     }
   };
 
+  // Reactのフックは早期return（下のif(!open))より前で、かつ毎回同じ順序で
+  // 呼び出す必要がある。以前はこれがreturnの後にあり、パネルを開いた瞬間に
+  // フック呼び出し数が変わってReactがクラッシュ（画面が真っ白になる）していた。
   const debouncedRadiusSearch = useDebouncedCallback((id: string, r: number) => search(id, r), 500);
+
+  if (!open) return null;
+
+  const updateRow = (id: string, partial: Partial<AreaRow>) => {
+    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...partial } : r)));
+  };
 
   const changeRadius = (id: string, r: number) => {
     updateRow(id, { radiusKm: r });
