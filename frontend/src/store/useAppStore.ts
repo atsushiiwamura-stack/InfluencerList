@@ -30,6 +30,12 @@ export interface FocusRequest {
   key: number; // 同じ地点でも再フォーカスできるようにするための識別子
 }
 
+export interface AreaCircle {
+  center: [number, number];
+  radiusM: number;
+  color: string;
+}
+
 interface AppState {
   influencers: Influencer[];
   salons: Salon[];
@@ -58,8 +64,7 @@ interface AppState {
   salonModalOpen: boolean;
   editingSalon: Salon | null;
   areaReportOpen: boolean;
-  areaReportCircles: [number, number][];
-  areaReportRadiusM: number | null;
+  areaReportCircles: AreaCircle[];
 
   fetchMeta: () => Promise<void>;
   fetchInfluencers: () => Promise<void>;
@@ -86,7 +91,7 @@ interface AppState {
   setLoginModalOpen: (open: boolean) => void;
   setUploadModalOpen: (open: boolean) => void;
   setAreaReportOpen: (open: boolean) => void;
-  setAreaReportCircles: (centers: [number, number][], radiusM: number) => void;
+  setAreaReportCircles: (circles: AreaCircle[]) => void;
   clearAreaReportCircles: () => void;
   openAddSalonModal: () => void;
   openEditSalonModal: (salon: Salon) => void;
@@ -132,7 +137,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   editingSalon: null,
   areaReportOpen: false,
   areaReportCircles: [],
-  areaReportRadiusM: null,
 
   fetchMeta: async () => {
     try {
@@ -257,10 +261,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   setUploadModalOpen: (open) => set({ uploadModalOpen: open }),
   setAreaReportOpen: (open) => {
     set({ areaReportOpen: open });
-    if (!open) set({ areaReportCircles: [], areaReportRadiusM: null });
+    if (!open) set({ areaReportCircles: [] });
   },
-  setAreaReportCircles: (centers, radiusM) => set({ areaReportCircles: centers, areaReportRadiusM: radiusM }),
-  clearAreaReportCircles: () => set({ areaReportCircles: [], areaReportRadiusM: null }),
+  setAreaReportCircles: (circles) => set({ areaReportCircles: circles }),
+  clearAreaReportCircles: () => set({ areaReportCircles: [] }),
   setLoginModalOpen: (open) => set({ loginModalOpen: open }),
   openAddSalonModal: () => set({ salonModalOpen: true, editingSalon: null }),
   openEditSalonModal: (salon) => set({ salonModalOpen: true, editingSalon: salon }),

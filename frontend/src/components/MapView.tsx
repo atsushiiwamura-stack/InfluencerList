@@ -115,7 +115,6 @@ export default function MapView() {
   const focusSalon = useAppStore((s) => s.focusSalon);
   const darkMode = useAppStore((s) => s.darkMode);
   const areaReportCircles = useAppStore((s) => s.areaReportCircles);
-  const areaReportRadiusM = useAppStore((s) => s.areaReportRadiusM);
 
   // CARTOの無料ベースマップ（APIキー不要）。OSM標準タイルより配色がフラットで
   // 上に重ねるピンク/青/オレンジのピンが際立つため、SaaSダッシュボード的な
@@ -152,15 +151,14 @@ export default function MapView() {
 
       {showInfluencers && <InfluencerClusterLayer influencers={influencers} salons={salons} />}
 
-      {areaReportRadiusM != null &&
-        areaReportCircles.map((center, i) => (
-          <Circle
-            key={`area-circle-${i}-${center[0]}-${center[1]}`}
-            center={center}
-            radius={areaReportRadiusM}
-            pathOptions={{ color: "#ec4899", weight: 2, fillColor: "#ec4899", fillOpacity: 0.08 }}
-          />
-        ))}
+      {areaReportCircles.map((circle, i) => (
+        <Circle
+          key={`area-circle-${i}-${circle.center[0]}-${circle.center[1]}`}
+          center={circle.center}
+          radius={circle.radiusM}
+          pathOptions={{ color: circle.color, weight: 2, fillColor: circle.color, fillOpacity: 0.08 }}
+        />
+      ))}
 
       {salons.map((salon) => (
         <Marker

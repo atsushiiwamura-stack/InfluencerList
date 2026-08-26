@@ -1,10 +1,29 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAppStore } from "../store/useAppStore";
+import type { AreaCircle } from "../store/useAppStore";
 import { api } from "../api/client";
 import type { AreaReport } from "../types";
 import CampaignChart from "./CampaignChart";
+import { useDebouncedCallback } from "../utils/useDebouncedCallback";
 
-const RADIUS_OPTIONS = [0.5, 1, 2, 3, 5];
+// dataviz skillで検証済みのカテゴリカル配色。複数エリアを同時比較する時に
+// どの円がどの行のものか色で見分けられるよう、行ごとに固定の色を割り当てる。
+const ROW_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#4a3aa7", "#e34948"];
+
+interface AreaRow {
+  id: string;
+  query: string;
+  radiusKm: number;
+  report: AreaReport | null;
+  loading: boolean;
+  error: string | null;
+}
+
+let rowSeq = 0;
+function newRow(query = ""): AreaRow {
+  rowSeq += 1;
+  return { id: `row-${rowSeq}`, query, radiusKm: 2, report: null, loading: false, error: null };
+}
 
 export default function AreaReportPanel() {
   const open = useAppStore((s) => s.areaReportOpen);
@@ -13,51 +32,63 @@ export default function AreaReportPanel() {
   const focusBounds = useAppStore((s) => s.focusBounds);
   const setAreaReportCircles = useAppStore((s) => s.setAreaReportCircles);
 
-  const [q, setQ] = useState("");
-  const [radiusKm, setRadiusKm] = useState(2);
-  const [report, setReport] = useState<AreaReport | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [rows, setRows] = useState<AreaRow[]>([newRow()]);
+
+  // 全行の結果が変わるたびに、地図上の円をまとめて再計算する。
+  useEffect(() => {
+    const circles: AreaCircle[] = [];
+    rows.forEach((row, i) => {
+      if (!row.report) return;
+      const color = ROW_COLORS[i % ROW_COLORS.length];
+      const radiusM = row.report.radius_km * 1000;
+      row.report.salons.forEach((s) => circles.push({ center: [s.salon.latitude, s.salon.longitude], radiusM, color }));
+      row.report.station_matches.forEach((s) => circles.push({ center: [s.latitude, s.longitude], radiusM, color }));
+    });
+    setAreaReportCircles(circles);
+  }, [rows, setAreaReportCircles]);
 
   if (!open) return null;
 
-  const search = async (overrideRadius?: number) => {
-    if (!q.trim()) return;
-    setLoading(true);
-    setError(null);
+  const updateRow = (id: string, partial: Partial<AreaRow>) => {
+    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...partial } : r)));
+  };
+
+  const search = async (id: string, overrideRadius?: number) => {
+    const row = rows.find((r) => r.id === id);
+    if (!row || !row.query.trim()) return;
+    updateRow(id, { loading: true, error: null });
     try {
-      const res = await api.getAreaReport(q.trim(), overrideRadius ?? radiusKm);
-      setReport(res);
+      const res = await api.getAreaReport(row.query.trim(), overrideRadius ?? row.radiusKm);
+      updateRow(id, { report: res, loading: false });
       const centers: [number, number][] = [
         ...res.salons.map((s) => [s.salon.latitude, s.salon.longitude] as [number, number]),
         ...res.station_matches.map((s) => [s.latitude, s.longitude] as [number, number]),
       ];
       if (centers.length > 0) {
-        // 円が選んだ半径の分だけ画面に収まるよう、地図を自動でその範囲にフォーカスする。
-        setAreaReportCircles(centers, res.radius_km * 1000);
-        const pad = res.radius_km / 111; // 緯度1度 ≈ 111km の概算でbounds用の余白を作る
+        const pad = res.radius_km / 111;
         const bounds = centers.flatMap(([lat, lon]) => [
           [lat + pad, lon + pad],
           [lat - pad, lon - pad],
         ] as [number, number][]);
         focusBounds(bounds);
-      } else {
-        setAreaReportCircles([], res.radius_km * 1000);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "取得に失敗しました");
-    } finally {
-      setLoading(false);
+      updateRow(id, { error: err instanceof Error ? err.message : "取得に失敗しました", loading: false });
     }
   };
 
-  const changeRadius = (r: number) => {
-    setRadiusKm(r);
-    if (report) search(r);
+  const debouncedRadiusSearch = useDebouncedCallback((id: string, r: number) => search(id, r), 500);
+
+  const changeRadius = (id: string, r: number) => {
+    updateRow(id, { radiusKm: r });
+    if (rows.find((row) => row.id === id)?.report) debouncedRadiusSearch(id, r);
   };
 
+  const addRow = () => setRows((rs) => [...rs, newRow()]);
+  const removeRow = (id: string) => setRows((rs) => (rs.length > 1 ? rs.filter((r) => r.id !== id) : rs));
+
   return (
-    <div className="absolute top-20 left-4 bottom-4 w-full sm:w-[380px] max-w-[calc(100%-2rem)] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200/70 dark:border-slate-700 z-[550] flex flex-col overflow-hidden">
+    <div className="absolute top-20 left-4 bottom-4 w-full sm:w-[400px] max-w-[calc(100%-2rem)] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200/70 dark:border-slate-700 z-[550] flex flex-col overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800">
         <h2 className="font-bold text-sm text-slate-800 dark:text-slate-100">📊 エリアレポート</h2>
         <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-700 text-lg leading-none">
@@ -65,184 +96,166 @@ export default function AreaReportPanel() {
         </button>
       </div>
 
-      <div className="p-3 border-b border-slate-100 dark:border-slate-800 space-y-2">
-        <div className="flex gap-2">
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && search()}
-            placeholder="エリア名（例: 銀座、渋谷）"
-            className="flex-1 min-w-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm px-3 py-2 text-slate-700 dark:text-slate-200"
-          />
-          <button
-            onClick={() => search()}
-            disabled={loading}
-            className="rounded-lg bg-brand-600 text-white text-sm px-4 font-medium disabled:opacity-50 flex-shrink-0"
-          >
-            {loading ? "検索中" : "検索"}
-          </button>
-        </div>
-        <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 flex-wrap">
-          <span>半径（地図に円で表示）：</span>
-          {RADIUS_OPTIONS.map((r) => (
-            <button
-              key={r}
-              onClick={() => changeRadius(r)}
-              className={`px-2 py-0.5 rounded-full border text-[11px] ${
-                radiusKm === r
-                  ? "bg-brand-600 text-white border-brand-600"
-                  : "border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-300"
-              }`}
-            >
-              {r}km
-            </button>
-          ))}
-        </div>
-      </div>
-
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
-        {error && <p className="text-sm text-red-500">{error}</p>}
+        <p className="text-[11px] text-slate-400 leading-relaxed">
+          エリア（駅名・地名・都道府県名）ごとに行を追加して、それぞれ違う半径で同時に比較できます。
+          地図上には行ごとに色分けした円が表示されます。
+        </p>
 
-        {!report && !loading && (
-          <p className="text-xs text-slate-400 leading-relaxed">
-            エリア名（駅名・地名・都道府県名）を入力すると、該当する美容室があれば過去実績から算出した
-            「予想応募人数」を、そして<strong>美容室が未登録のエリアでも駅名から</strong>半径内のインフルエンサー数を
-            表示します。地図上にはピンクの円で半径が表示されるので、範囲を目視で確認できます。
-          </p>
-        )}
+        {rows.map((row, i) => (
+          <AreaRowCard
+            key={row.id}
+            row={row}
+            color={ROW_COLORS[i % ROW_COLORS.length]}
+            onQueryChange={(v) => updateRow(row.id, { query: v })}
+            onRadiusChange={(v) => changeRadius(row.id, v)}
+            onSearch={() => search(row.id)}
+            onFocusSalon={focusSalon}
+            onRemove={rows.length > 1 ? () => removeRow(row.id) : undefined}
+          />
+        ))}
 
-        {report && (
-          <>
-            {report.matched_prefecture && (
-              <div className="rounded-xl bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 p-3">
-                <div className="text-[10px] text-violet-700 dark:text-violet-300 font-semibold mb-1">
-                  「{report.matched_prefecture}」全体のインフルエンサー在籍数
-                </div>
-                <div className="text-2xl font-bold text-slate-800 dark:text-slate-100">
-                  {report.prefecture_influencer_count?.toLocaleString()}
-                  <span className="text-xs font-normal text-slate-500 dark:text-slate-400 ml-1">人</span>
-                </div>
-                <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                  都道府県名で検索されたため、半径円ではなく{report.matched_prefecture}在住の全人数を集計しています
-                </div>
-              </div>
-            )}
+        <button
+          onClick={addRow}
+          className="w-full text-xs rounded-lg border border-dashed border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-400 py-2 hover:bg-slate-50 dark:hover:bg-slate-800"
+        >
+          ＋ 別のエリアを追加して比較
+        </button>
+      </div>
+    </div>
+  );
+}
 
-            <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-xl bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 p-3">
-                <div className="text-[10px] text-brand-700 dark:text-brand-300 font-semibold mb-1">
-                  予想応募人数
-                </div>
-                {report.prediction.sample_size > 0 ? (
-                  <>
-                    <div className="text-xl font-bold text-slate-800 dark:text-slate-100">
-                      {report.prediction.avg_applicants}
-                      <span className="text-xs font-normal text-slate-500 dark:text-slate-400 ml-1">人</span>
-                    </div>
-                    <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                      中央値{report.prediction.median_applicants}人・{report.prediction.sample_size}件
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400">実績データなし</div>
-                )}
-              </div>
+function AreaRowCard({
+  row,
+  color,
+  onQueryChange,
+  onRadiusChange,
+  onSearch,
+  onFocusSalon,
+  onRemove,
+}: {
+  row: AreaRow;
+  color: string;
+  onQueryChange: (v: string) => void;
+  onRadiusChange: (v: number) => void;
+  onSearch: () => void;
+  onFocusSalon: (id: number) => void;
+  onRemove?: () => void;
+}) {
+  const { report, loading, error } = row;
 
-              <div className="rounded-xl bg-pink-50 dark:bg-pink-900/20 border border-pink-200 dark:border-pink-800 p-3">
-                <div className="text-[10px] text-pink-700 dark:text-pink-300 font-semibold mb-1">
-                  該当店舗の半径{report.radius_km}km内
-                </div>
-                <div className="text-xl font-bold text-slate-800 dark:text-slate-100">
-                  {report.total_nearby_influencer_count.toLocaleString()}
-                  <span className="text-xs font-normal text-slate-500 dark:text-slate-400 ml-1">人</span>
-                </div>
-                <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                  店舗{report.salons.length}件周辺（重複除く）
-                </div>
-              </div>
-            </div>
-
-            {Object.keys(report.prediction.by_menu).length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {Object.entries(report.prediction.by_menu).map(([menu, avg]) => (
-                  <span
-                    key={menu}
-                    className="text-[10px] bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full px-2 py-0.5 text-slate-600 dark:text-slate-300"
-                  >
-                    {menu} 平均{avg}人
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {report.station_matches.length > 0 && (
-              <div>
-                <h3 className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1.5">
-                  一致した駅（美容室未登録エリアの目安）
-                </h3>
-                <div className="space-y-2">
-                  {report.station_matches.map((st, i) => (
-                    <div key={`${st.name}-${i}`} className="rounded-xl border border-sky-200 dark:border-sky-800 bg-sky-50/50 dark:bg-sky-900/10 p-2.5">
-                      <div className="flex items-center justify-between flex-wrap gap-1">
-                        <span className="font-semibold text-xs text-slate-800 dark:text-slate-100">
-                          🚉 {st.name}駅{st.prefecture ? `（${st.prefecture}）` : ""}
-                        </span>
-                        <span className="bg-pink-50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 rounded-full px-1.5 py-0.5 text-[10px]">
-                          📷{st.nearby_influencer_count}人
-                        </span>
-                      </div>
-                      {st.lines.length > 0 && (
-                        <div className="text-[10px] text-slate-400 mt-0.5">{st.lines.join("・")}</div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div>
-              <h3 className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1.5">
-                該当する美容室（{report.salons.length}件）
-              </h3>
-              <div className="space-y-2">
-                {report.salons.map((sc) => (
-                  <div key={sc.salon.id} className="rounded-xl border border-slate-200 dark:border-slate-700 p-2.5">
-                    <div className="flex items-center justify-between flex-wrap gap-1">
-                      <button
-                        onClick={() => focusSalon(sc.salon.id)}
-                        className="font-semibold text-xs text-slate-800 dark:text-slate-100 hover:text-brand-600 text-left"
-                      >
-                        {sc.salon.name}
-                      </button>
-                      <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400">
-                        {sc.avg_applicants != null && <span>平均{sc.avg_applicants}人/{sc.campaign_count}回</span>}
-                        <span className="bg-pink-50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 rounded-full px-1.5 py-0.5">
-                          📷{sc.nearby_influencer_count}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">{sc.salon.address}</div>
-                    {sc.campaigns.length > 0 ? (
-                      <div className="mt-1.5">
-                        <CampaignChart campaigns={sc.campaigns} />
-                      </div>
-                    ) : (
-                      <div className="text-[10px] text-slate-400 mt-1.5">キャンペーン記録なし</div>
-                    )}
-                  </div>
-                ))}
-                {report.salons.length === 0 && (
-                  <p className="text-xs text-slate-400">
-                    {report.station_matches.length > 0
-                      ? "このエリアにはまだ美容室が登録されていません。上のインフルエンサー数を参考にしてください。"
-                      : "該当する美容室・駅が見つかりませんでした。"}
-                  </p>
-                )}
-              </div>
-            </div>
-          </>
+  return (
+    <div className="rounded-xl border p-2.5 space-y-2" style={{ borderColor: color + "55" }}>
+      <div className="flex items-center gap-1.5">
+        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: color }} />
+        <input
+          value={row.query}
+          onChange={(e) => onQueryChange(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && onSearch()}
+          placeholder="エリア名（例: 福岡、博多、渋谷）"
+          className="flex-1 min-w-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm px-2.5 py-1.5 text-slate-700 dark:text-slate-200"
+        />
+        <button
+          onClick={onSearch}
+          disabled={loading}
+          className="rounded-lg bg-brand-600 text-white text-xs px-3 py-1.5 font-medium disabled:opacity-50 flex-shrink-0"
+        >
+          {loading ? "..." : "検索"}
+        </button>
+        {onRemove && (
+          <button onClick={onRemove} className="text-slate-400 hover:text-red-500 text-sm flex-shrink-0 px-1">
+            ✕
+          </button>
         )}
       </div>
+
+      <label className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+        <span>半径</span>
+        <input
+          type="number"
+          min={0.1}
+          max={20}
+          step={0.1}
+          value={row.radiusKm}
+          onChange={(e) => onRadiusChange(Number(e.target.value) || 0.1)}
+          className="w-16 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs px-2 py-1 text-slate-700 dark:text-slate-200"
+        />
+        <span>km（自由入力・地図に円で表示）</span>
+      </label>
+
+      {error && <p className="text-xs text-red-500">{error}</p>}
+
+      {report && (
+        <div className="space-y-2 pt-1">
+          {report.matched_prefecture && (
+            <div className="rounded-lg bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 p-2">
+              <div className="text-[10px] text-violet-700 dark:text-violet-300 font-semibold">
+                「{report.matched_prefecture}」全体の在籍数
+              </div>
+              <div className="text-lg font-bold text-slate-800 dark:text-slate-100">
+                {report.prefecture_influencer_count?.toLocaleString()}
+                <span className="text-xs font-normal text-slate-500 dark:text-slate-400 ml-1">人</span>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-lg bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 p-2">
+              <div className="text-[10px] text-brand-700 dark:text-brand-300 font-semibold">予想応募人数</div>
+              {report.prediction.sample_size > 0 ? (
+                <div className="text-lg font-bold text-slate-800 dark:text-slate-100">
+                  {report.prediction.avg_applicants}
+                  <span className="text-xs font-normal text-slate-500 dark:text-slate-400 ml-1">人</span>
+                </div>
+              ) : (
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">実績なし</div>
+              )}
+            </div>
+            <div className="rounded-lg bg-pink-50 dark:bg-pink-900/20 border border-pink-200 dark:border-pink-800 p-2">
+              <div className="text-[10px] text-pink-700 dark:text-pink-300 font-semibold">半径{report.radius_km}km内</div>
+              <div className="text-lg font-bold text-slate-800 dark:text-slate-100">
+                {report.total_nearby_influencer_count.toLocaleString()}
+                <span className="text-xs font-normal text-slate-500 dark:text-slate-400 ml-1">人</span>
+              </div>
+            </div>
+          </div>
+
+          {report.station_matches.map((st, i) => (
+            <div key={i} className="rounded-lg border border-sky-200 dark:border-sky-800 bg-sky-50/50 dark:bg-sky-900/10 p-2 flex items-center justify-between">
+              <span className="text-xs text-slate-700 dark:text-slate-200">🚉 {st.name}駅</span>
+              <span className="text-[10px] bg-pink-50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 rounded-full px-1.5 py-0.5">
+                📷{st.nearby_influencer_count}人
+              </span>
+            </div>
+          ))}
+
+          {report.salons.map((sc) => (
+            <div key={sc.salon.id} className="rounded-lg border border-slate-200 dark:border-slate-700 p-2">
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => onFocusSalon(sc.salon.id)}
+                  className="font-semibold text-xs text-slate-800 dark:text-slate-100 hover:text-brand-600 text-left"
+                >
+                  {sc.salon.name}
+                </button>
+                <span className="text-[10px] bg-pink-50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 rounded-full px-1.5 py-0.5">
+                  📷{sc.nearby_influencer_count}
+                </span>
+              </div>
+              {sc.campaigns.length > 0 && (
+                <div className="mt-1.5">
+                  <CampaignChart campaigns={sc.campaigns} />
+                </div>
+              )}
+            </div>
+          ))}
+
+          {report.salons.length === 0 && report.station_matches.length === 0 && !report.matched_prefecture && (
+            <p className="text-xs text-slate-400">該当するエリアが見つかりませんでした。</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
