@@ -166,7 +166,6 @@ export interface AreaReport {
   matched_prefecture: string | null;
   prefecture_influencer_count: number | null;
   station_matches: StationAreaResult[];
-  line_routes: LineRoute[];
 }
 
 export interface LineStation {
@@ -178,6 +177,20 @@ export interface LineStation {
 export interface LineRoute {
   name: string;
   stations: LineStation[];
+}
+
+export interface LineStationCount {
+  name: string;
+  latitude: number;
+  longitude: number;
+  nearby_influencer_count: number;
+}
+
+export interface LineReport {
+  name: string;
+  radius_km: number;
+  stations: LineStationCount[];
+  total_nearby_influencer_count: number;
 }
 
 export interface StationAreaResult {

@@ -1,4 +1,5 @@
 import os
+import math
 import gzip as _gzip
 import json as _json
 from typing import Optional, List
@@ -16,7 +17,7 @@ from .auth import (
 )
 from .scoring import haversine_m, walking_minutes, composite_score
 from .uploads import parse_influencer_rows, parse_salon_rows, parse_campaign_rows
-from .station import get_nearby_stations, find_stations_by_name, get_line_routes
+from .station import get_nearby_stations, find_stations_by_name, get_line_route
 from .geocode import resolve_from_address, normalize_prefecture, _ALL_PREFECTURES
 
 Base.metadata.create_all(bind=engine)
@@ -526,26 +527,8 @@ async def area_report(
                 nearby_influencer_count=len(nearby_ids),
             ))
 
-    # 該当駅を通る実在路線を地図に線として描画する。
-    # 路線ごとの駅数が多いと読み込みが遅くなるため、路線数は最大6本までに絞り、
-    # 取得は並列＋キャッシュ済みで高速化している。「湘南新宿ライン」のような
-    # 直通運転の愛称路線はHeartRails側にデータが無いことがあり、その場合は
-    # 空リストが返るため自動的に表示対象から外れる（推測で線を引かない）。
-    line_routes: List[schemas.LineRoute] = []
-    unique_lines = []
-    for st in station_results:
-        for line in st.lines:
-            if line not in unique_lines:
-                unique_lines.append(line)
-    unique_lines = unique_lines[:6]
-    if unique_lines:
-        routes_by_name = await get_line_routes(unique_lines)
-        for name, stations in routes_by_name.items():
-            if stations:
-                line_routes.append(schemas.LineRoute(
-                    name=name,
-                    stations=[schemas.LineStation(name=s["name"], latitude=s["latitude"], longitude=s["longitude"]) for s in stations],
-                ))
+    # 路線の描画は重いため area_report では行わず、フロント側で駅名選択時に
+    # /api/lines/route を個別に呼び出してオンデマンドで表示する。
 
     def _median(values: List[int]) -> Optional[float]:
         if not values:
@@ -564,15 +547,27 @@ async def area_report(
     #   何人インフルエンサーがいるか」を"エリアの規模"の代理指標として使う。
     #   全国の実績があるキャンペーンについて、それぞれの開催店舗の周辺インフルエンサー数
     #   （同じ半径で計算）に対する応募人数の比率＝「応募率」を求め、その分布から
-    #   ・最も低かった応募率 → 保守的な下限の推定に使う（「〇〇人以上」の根拠）
+    #   ・下位25%の応募率     → 保守的な下限の推定に使う（「〇〇人以上」の根拠）
     #   ・中央値の応募率     → 参考としての「だいたいこれくらい」の推定に使う
     #   を求め、対象エリア自身の周辺インフルエンサー数に掛け合わせて算出する。
     #   実績の無いエリアでも、規模が近い（＝周辺インフルエンサー数が近い）エリアの
     #   実績から類推していることになる。
+    #   下限は「全国で一番悪かった1件」だと、そのエリアと無関係などこか1件の
+    #   極端な不振が全体の下限を過剰に押し下げてしまうため、下位25%タイル値を使う
+    #   （1件の外れ値に引っ張られにくく、かつ十分保守的な水準）。
     is_estimated = False
     estimated_min = None
     estimated_typical = None
     regression_n = None
+
+    def _percentile(sorted_values: List[float], pct: float) -> float:
+        if len(sorted_values) == 1:
+            return sorted_values[0]
+        k = (len(sorted_values) - 1) * pct
+        lo, hi = math.floor(k), math.ceil(k)
+        if lo == hi:
+            return sorted_values[int(k)]
+        return sorted_values[lo] * (hi - k) + sorted_values[hi] * (k - lo)
 
     if not all_applicant_counts and len(nearby_ids_union) > 0:
         all_campaigns_with_data = (
@@ -594,8 +589,8 @@ async def area_report(
 
         if rates:
             rates.sort()
-            r_low = rates[0]  # 全国で最も低かった応募率＝最も保守的な下限
-            r_med = rates[len(rates) // 2]
+            r_low = _percentile(rates, 0.25)  # 下位25%タイル＝保守的だが外れ値1件に引っ張られない下限
+            r_med = _percentile(rates, 0.5)
             area_n = len(nearby_ids_union)
             is_estimated = True
             estimated_min = int(area_n * r_low)
@@ -623,7 +618,6 @@ async def area_report(
         matched_prefecture=matched_prefecture,
         prefecture_influencer_count=prefecture_influencer_count,
         station_matches=station_results,
-        line_routes=line_routes,
     )
 
 
@@ -631,6 +625,46 @@ async def area_report(
 @app.get("/api/route", response_model=dict)
 async def route_info(lat: float, lon: float, limit: int = 5):
     return await get_nearby_stations(lat, lon, limit=limit)
+
+
+@app.get("/api/lines/route", response_model=schemas.LineRoute)
+async def line_route(name: str):
+    stations = await get_line_route(name)
+    return schemas.LineRoute(name=name, stations=[schemas.LineStation(**s) for s in stations])
+
+
+@app.get("/api/lines/report", response_model=schemas.LineReport)
+async def line_report(
+    name: str = Query(..., min_length=1),
+    radius_km: float = Query(10.0, ge=0.1, le=20.0),
+    db: Session = Depends(get_db),
+):
+    """沿線（駅ごとの半径円の合計）で、重複を除いた近隣インフルエンサー数を算出する。
+    エリアレポートの「駅単位の半径検索」に対し、こちらは1路線まるごとの合算値を返す。"""
+    stations = await get_line_route(name)
+    influencer_points = _get_influencer_points(db)
+
+    nearby_ids_union: set = set()
+    station_results: List[schemas.LineStationCount] = []
+    for st in stations:
+        nearby_ids = {
+            inf_id for inf_id, lat, lon in influencer_points
+            if haversine_m(st["latitude"], st["longitude"], lat, lon) <= radius_km * 1000
+        }
+        nearby_ids_union |= nearby_ids
+        station_results.append(schemas.LineStationCount(
+            name=st["name"],
+            latitude=st["latitude"],
+            longitude=st["longitude"],
+            nearby_influencer_count=len(nearby_ids),
+        ))
+
+    return schemas.LineReport(
+        name=name,
+        radius_km=radius_km,
+        stations=station_results,
+        total_nearby_influencer_count=len(nearby_ids_union),
+    )
 
 
 # ---------- meta ----------

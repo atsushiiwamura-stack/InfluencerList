@@ -11,6 +11,8 @@ import type {
   Campaign,
   CampaignInput,
   AreaReport,
+  LineRoute,
+  LineReport,
 } from "../types";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
@@ -87,6 +89,11 @@ export const api = {
     request<NearbySalon[]>(`/api/influencers/${influencerId}/nearby-salons?limit=${limit}`),
 
   getRoute: (lat: number, lon: number) => request<RouteResponse>(`/api/route?lat=${lat}&lon=${lon}`),
+
+  getLineRoute: (name: string) => request<LineRoute>(`/api/lines/route?name=${encodeURIComponent(name)}`),
+
+  getLineReport: (name: string, radiusKm = 10) =>
+    request<LineReport>(`/api/lines/report?name=${encodeURIComponent(name)}&radius_km=${radiusKm}`),
 
   login: (username: string, password: string) =>
     request<{ access_token: string; token_type: string }>("/api/auth/login", {

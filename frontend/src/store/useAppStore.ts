@@ -41,6 +41,13 @@ export interface AreaLine {
   points: [number, number][];
 }
 
+export interface LineStat {
+  name: string;
+  radiusKm: number;
+  total: number;
+  loading: boolean;
+}
+
 interface AppState {
   influencers: Influencer[];
   salons: Salon[];
@@ -71,6 +78,7 @@ interface AppState {
   areaReportOpen: boolean;
   areaReportCircles: AreaCircle[];
   areaReportLines: AreaLine[];
+  lineStats: LineStat[];
 
   fetchMeta: () => Promise<void>;
   fetchInfluencers: () => Promise<void>;
@@ -100,6 +108,10 @@ interface AppState {
   setAreaReportCircles: (circles: AreaCircle[]) => void;
   setAreaReportLines: (lines: AreaLine[]) => void;
   clearAreaReportCircles: () => void;
+  toggleLine: (line: AreaLine) => void;
+  setLineStatLoading: (name: string, radiusKm: number) => void;
+  setLineStatResult: (name: string, total: number) => void;
+  removeLineStat: (name: string) => void;
   openAddSalonModal: () => void;
   openEditSalonModal: (salon: Salon) => void;
   closeSalonModal: () => void;
@@ -145,6 +157,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   areaReportOpen: false,
   areaReportCircles: [],
   areaReportLines: [],
+  lineStats: [],
 
   fetchMeta: async () => {
     try {
@@ -269,11 +282,27 @@ export const useAppStore = create<AppState>((set, get) => ({
   setUploadModalOpen: (open) => set({ uploadModalOpen: open }),
   setAreaReportOpen: (open) => {
     set({ areaReportOpen: open });
-    if (!open) set({ areaReportCircles: [], areaReportLines: [] });
+    if (!open) set({ areaReportCircles: [], areaReportLines: [], lineStats: [] });
   },
   setAreaReportCircles: (circles) => set({ areaReportCircles: circles }),
   setAreaReportLines: (lines) => set({ areaReportLines: lines }),
-  clearAreaReportCircles: () => set({ areaReportCircles: [], areaReportLines: [] }),
+  clearAreaReportCircles: () => set({ areaReportCircles: [], areaReportLines: [], lineStats: [] }),
+  toggleLine: (line) => {
+    const current = get().areaReportLines;
+    const exists = current.some((l) => l.name === line.name);
+    set({ areaReportLines: exists ? current.filter((l) => l.name !== line.name) : [...current, line] });
+  },
+  setLineStatLoading: (name, radiusKm) => {
+    const current = get().lineStats;
+    const rest = current.filter((s) => s.name !== name);
+    set({ lineStats: [...rest, { name, radiusKm, total: 0, loading: true }] });
+  },
+  setLineStatResult: (name, total) => {
+    set({ lineStats: get().lineStats.map((s) => (s.name === name ? { ...s, total, loading: false } : s)) });
+  },
+  removeLineStat: (name) => {
+    set({ lineStats: get().lineStats.filter((s) => s.name !== name) });
+  },
   setLoginModalOpen: (open) => set({ loginModalOpen: open }),
   openAddSalonModal: () => set({ salonModalOpen: true, editingSalon: null }),
   openEditSalonModal: (salon) => set({ salonModalOpen: true, editingSalon: salon }),

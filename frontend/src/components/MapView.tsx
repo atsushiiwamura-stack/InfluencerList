@@ -117,13 +117,12 @@ export default function MapView() {
   const areaReportCircles = useAppStore((s) => s.areaReportCircles);
   const areaReportLines = useAppStore((s) => s.areaReportLines);
 
-  // CARTOの無料ベースマップ（APIキー不要）。OSM標準タイルより配色がフラットで
-  // 上に重ねるピンク/青/オレンジのピンが際立つため、SaaSダッシュボード的な
-  // 見やすさになる。ダークモード時は専用のダークタイルに切り替える
-  // （CSSフィルターでの疑似ダーク化はにじんで汚くなるため使わない）。
-  const tileUrl = darkMode
-    ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-    : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+  // CARTOの無料ベースマップはアクセス過多時に「API KEY REQUIRED」のプレース
+  // ホルダー画像を返すようになったため、APIキー不要のEsriベースマップに切替。
+  // ライトモードは道路・地名（日本語）入りの街路地図でGoogleマップに近い見た目。
+  // ダークモードはEsriの Dark Gray Canvas（ベース＋ラベルの2レイヤー構成）。
+  const esriAttribution =
+    "Tiles &copy; Esri &mdash; Esri, HERE, Garmin, FAO, NOAA, USGS, &copy; OpenStreetMap contributors";
 
   return (
     <MapContainer
@@ -137,15 +136,31 @@ export default function MapView() {
       attributionControl={true}
       preferCanvas
     >
-      <TileLayer
-        key={darkMode ? "dark" : "light"}
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-        url={tileUrl}
-        subdomains="abcd"
-        noWrap
-        bounds={JAPAN_BOUNDS}
-        detectRetina
-      />
+      {darkMode ? (
+        <>
+          <TileLayer
+            key="dark-base"
+            attribution={esriAttribution}
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+            noWrap
+            bounds={JAPAN_BOUNDS}
+          />
+          <TileLayer
+            key="dark-ref"
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}"
+            noWrap
+            bounds={JAPAN_BOUNDS}
+          />
+        </>
+      ) : (
+        <TileLayer
+          key="light"
+          attribution={esriAttribution}
+          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
+          noWrap
+          bounds={JAPAN_BOUNDS}
+        />
+      )}
       <MapResizeHandler />
       <FocusHandler />
       <MapClickHandler />

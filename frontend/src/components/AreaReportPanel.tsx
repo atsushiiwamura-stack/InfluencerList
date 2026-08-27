@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { useAppStore } from "../store/useAppStore";
-import type { AreaCircle, AreaLine } from "../store/useAppStore";
+import type { AreaCircle } from "../store/useAppStore";
 import { api } from "../api/client";
 import type { AreaReport, AreaPrediction } from "../types";
 import CampaignChart from "./CampaignChart";
+import LineBadge from "./LineBadge";
 import { useDebouncedCallback } from "../utils/useDebouncedCallback";
+import { useLineToggle } from "../utils/useLineToggle";
 
 // dataviz skillで検証済みのカテゴリカル配色。複数エリアを同時比較する時に
 // どの円がどの行のものか色で見分けられるよう、行ごとに固定の色を割り当てる。
@@ -31,30 +33,22 @@ export default function AreaReportPanel() {
   const focusSalon = useAppStore((s) => s.focusSalon);
   const focusBounds = useAppStore((s) => s.focusBounds);
   const setAreaReportCircles = useAppStore((s) => s.setAreaReportCircles);
-  const setAreaReportLines = useAppStore((s) => s.setAreaReportLines);
 
   const [rows, setRows] = useState<AreaRow[]>([newRow()]);
 
-  // 全行の結果が変わるたびに、地図上の円・路線をまとめて再計算する。
+  // 全行の結果が変わるたびに、地図上の円をまとめて再計算する。
+  // 路線は自動描画せず、駅の路線バッジを選択した時だけオンデマンドで表示する。
   useEffect(() => {
     const circles: AreaCircle[] = [];
-    const lines: AreaLine[] = [];
-    const seenLines = new Set<string>();
     rows.forEach((row, i) => {
       if (!row.report) return;
       const color = ROW_COLORS[i % ROW_COLORS.length];
       const radiusM = row.report.radius_km * 1000;
       row.report.salons.forEach((s) => circles.push({ center: [s.salon.latitude, s.salon.longitude], radiusM, color }));
       row.report.station_matches.forEach((s) => circles.push({ center: [s.latitude, s.longitude], radiusM, color }));
-      row.report.line_routes.forEach((r) => {
-        if (seenLines.has(r.name)) return;
-        seenLines.add(r.name);
-        lines.push({ name: r.name, points: r.stations.map((s) => [s.latitude, s.longitude]) });
-      });
     });
     setAreaReportCircles(circles);
-    setAreaReportLines(lines);
-  }, [rows, setAreaReportCircles, setAreaReportLines]);
+  }, [rows, setAreaReportCircles]);
 
   const search = async (id: string, overrideRadius?: number) => {
     const row = rows.find((r) => r.id === id);
@@ -114,6 +108,8 @@ export default function AreaReportPanel() {
           地図上には行ごとに色分けした円が表示されます。
         </p>
 
+        <LinePicker />
+
         {rows.map((row, i) => (
           <AreaRowCard
             key={row.id}
@@ -138,6 +134,51 @@ export default function AreaReportPanel() {
   );
 }
 
+/** 駅・住所からではなく、路線名から直接「沿線に何人いるか」を調べるための入力欄。
+ *  選択すると地図に路線を描画し、左下のLineStatsPanelに沿線合計人数を表示する
+ *  （RouteInfo・AreaReportPanelの駅バッジクリックと同じ仕組みを共有）。 */
+function LinePicker() {
+  const meta = useAppStore((s) => s.meta);
+  const { isActive, loadingLine, handleLineClick } = useLineToggle();
+  const [selected, setSelected] = useState("");
+  const lines = meta?.lines ? [...meta.lines].sort() : [];
+
+  if (lines.length === 0) return null;
+
+  const active = selected !== "" && isActive(selected);
+  const loading = selected !== "" && loadingLine === selected;
+
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-2.5 space-y-1.5">
+      <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">🚃 路線で調べる</div>
+      <div className="flex gap-1.5">
+        <select
+          value={selected}
+          onChange={(e) => setSelected(e.target.value)}
+          className="flex-1 min-w-0 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-800 text-xs px-2 py-1.5 text-slate-700 dark:text-slate-200"
+        >
+          <option value="">路線を選択...</option>
+          {lines.map((l) => (
+            <option key={l} value={l}>
+              {l}
+            </option>
+          ))}
+        </select>
+        <button
+          disabled={!selected || loading}
+          onClick={() => selected && handleLineClick(selected)}
+          className="text-xs rounded-lg bg-brand-600 text-white px-3 py-1.5 disabled:opacity-40 flex-shrink-0"
+        >
+          {loading ? "..." : active ? "非表示" : "表示"}
+        </button>
+      </div>
+      <p className="text-[10px] text-slate-400">
+        選択すると地図に路線を表示し、沿線の近隣インフルエンサー数（左下に表示）を集計します。
+      </p>
+    </div>
+  );
+}
+
 function AreaRowCard({
   row,
   color,
@@ -156,6 +197,7 @@ function AreaRowCard({
   onRemove?: () => void;
 }) {
   const { report, loading, error } = row;
+  const { isActive: isLineActive, loadingLine, handleLineClick } = useLineToggle();
 
   // 読み込みが長引いた時に「固まっている？」という不安を与えないよう、
   // 一定時間が経ったら「もう少しお待ちください」の案内を出す。
@@ -250,9 +292,15 @@ function AreaRowCard({
                 </span>
               </div>
               {st.lines.length > 0 && (
-                <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-                  🔴 {st.lines.join("・")}
-                  {report.line_routes.length === 0 && "（この駅の路線データは地図に線として表示できませんでした）"}
+                <div className="flex flex-wrap items-center gap-1 mt-1">
+                  {st.lines.map((line) => (
+                    <span key={line} className="relative">
+                      <LineBadge lineName={line} active={isLineActive(line)} onClick={() => handleLineClick(line)} />
+                      {loadingLine === line && (
+                        <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-brand-400 animate-ping" />
+                      )}
+                    </span>
+                  ))}
                 </div>
               )}
             </div>

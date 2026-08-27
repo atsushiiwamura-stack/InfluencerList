@@ -145,14 +145,3 @@ async def get_line_route(line_name: str) -> list[dict]:
 
     _line_route_cache[line_name] = route
     return route
-
-
-async def get_line_routes(line_names: list[str]) -> dict[str, list[dict]]:
-    """複数路線をまとめて並列取得する（読み込み時間を抑えるため）。"""
-    import asyncio
-    uncached = [n for n in line_names if n not in _line_route_cache]
-    if uncached:
-        results = await asyncio.gather(*(get_line_route(n) for n in uncached))
-        for n, r in zip(uncached, results):
-            _line_route_cache[n] = r
-    return {n: _line_route_cache.get(n, []) for n in line_names}

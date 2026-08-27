@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
+import { useLineToggle } from "../utils/useLineToggle";
+import LineBadge from "./LineBadge";
 import type { RouteResponse } from "../types";
 
 interface Props {
@@ -10,6 +12,7 @@ interface Props {
 export default function RouteInfo({ lat, lon }: Props) {
   const [data, setData] = useState<RouteResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const { isActive, loadingLine, handleLineClick } = useLineToggle();
 
   useEffect(() => {
     let cancelled = false;
@@ -58,18 +61,19 @@ export default function RouteInfo({ lat, lon }: Props) {
           </div>
           <div className="flex flex-wrap gap-1 mt-1.5">
             {st.lines.map((line) => (
-              <span
-                key={line}
-                className="text-[11px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300"
-              >
-                {line}
+              <span key={line} className="relative">
+                <LineBadge lineName={line} active={isActive(line)} onClick={() => handleLineClick(line)} />
+                {loadingLine === line && (
+                  <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-brand-400 animate-ping" />
+                )}
               </span>
             ))}
           </div>
         </div>
       ))}
       <p className="text-[11px] text-slate-400 pt-1">
-        駅・路線情報は HeartRails Express API（公開データ）による実測値です。駅間の乗車時間データは提供されないため表示していません。
+        路線名をタップすると地図上にその路線を表示できます（データが無い路線は反応しません）。駅・路線情報は
+        HeartRails Express API（公開データ）による実測値です。駅間の乗車時間データは提供されないため表示していません。
       </p>
     </div>
   );
