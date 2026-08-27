@@ -140,7 +140,13 @@ class AreaPrediction(BaseModel):
     sample_size: int
     avg_applicants: Optional[float] = None
     median_applicants: Optional[float] = None
+    min_applicants: Optional[int] = None  # このエリアの実績の中で最も少なかった人数（「〇〇人以上」の根拠）
     by_menu: dict = {}
+    # このエリア自体に実績が無い場合、全国の実績から算出した推定値
+    is_estimated: bool = False
+    estimated_min_applicants: Optional[int] = None
+    estimated_typical_applicants: Optional[int] = None
+    regression_sample_size: Optional[int] = None  # 推定の元になった全国のキャンペーン件数
 
 
 class StationAreaResult(BaseModel):

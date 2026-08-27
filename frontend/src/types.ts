@@ -149,7 +149,12 @@ export interface AreaPrediction {
   sample_size: number;
   avg_applicants: number | null;
   median_applicants: number | null;
+  min_applicants: number | null;
   by_menu: Record<string, number>;
+  is_estimated: boolean;
+  estimated_min_applicants: number | null;
+  estimated_typical_applicants: number | null;
+  regression_sample_size: number | null;
 }
 
 export interface AreaReport {

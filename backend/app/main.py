@@ -525,11 +525,63 @@ async def area_report(
         mid = n // 2
         return float(s[mid]) if n % 2 else round((s[mid - 1] + s[mid]) / 2, 1)
 
+    # --- このエリア自体に実績が無い場合の推定ロジック ---
+    # 「地方でまだ募集をかけたことがないエリアでも、似た規模のエリアの実績から
+    # 何人集まりそうか推定したい」という要望への対応。
+    #
+    # 考え方：
+    #   都市の似ている/いないを人手で判断するのではなく、「そのエリアの半径〇km圏内に
+    #   何人インフルエンサーがいるか」を"エリアの規模"の代理指標として使う。
+    #   全国の実績があるキャンペーンについて、それぞれの開催店舗の周辺インフルエンサー数
+    #   （同じ半径で計算）に対する応募人数の比率＝「応募率」を求め、その分布から
+    #   ・最も低かった応募率 → 保守的な下限の推定に使う（「〇〇人以上」の根拠）
+    #   ・中央値の応募率     → 参考としての「だいたいこれくらい」の推定に使う
+    #   を求め、対象エリア自身の周辺インフルエンサー数に掛け合わせて算出する。
+    #   実績の無いエリアでも、規模が近い（＝周辺インフルエンサー数が近い）エリアの
+    #   実績から類推していることになる。
+    is_estimated = False
+    estimated_min = None
+    estimated_typical = None
+    regression_n = None
+
+    if not all_applicant_counts and len(nearby_ids_union) > 0:
+        all_campaigns_with_data = (
+            db.query(models.Campaign)
+            .filter(models.Campaign.applicant_count.isnot(None))
+            .all()
+        )
+        rates: List[float] = []
+        for camp in all_campaigns_with_data:
+            csalon = camp.salon
+            if not csalon:
+                continue
+            cnt = sum(
+                1 for _, lat, lon in influencer_points
+                if haversine_m(csalon.latitude, csalon.longitude, lat, lon) <= radius_km * 1000
+            )
+            if cnt > 0:
+                rates.append(camp.applicant_count / cnt)
+
+        if rates:
+            rates.sort()
+            r_low = rates[0]  # 全国で最も低かった応募率＝最も保守的な下限
+            r_med = rates[len(rates) // 2]
+            area_n = len(nearby_ids_union)
+            is_estimated = True
+            estimated_min = int(area_n * r_low)
+            estimated_typical = round(area_n * r_med)
+            regression_n = len(rates)
+
     prediction = schemas.AreaPrediction(
         sample_size=len(all_applicant_counts),
         avg_applicants=round(sum(all_applicant_counts) / len(all_applicant_counts), 1) if all_applicant_counts else None,
         median_applicants=_median(all_applicant_counts),
+        min_applicants=min(all_applicant_counts) if all_applicant_counts else None,
         by_menu={tag: round(sum(vals) / len(vals), 1) for tag, vals in menu_buckets.items()},
+        is_estimated=is_estimated,
+        estimated_min_applicants=estimated_min,
+        estimated_typical_applicants=estimated_typical,
+        regression_sample_size=regression_n,
     )
 
     return schemas.AreaReport(

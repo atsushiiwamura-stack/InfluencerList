@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useAppStore } from "../store/useAppStore";
 import type { AreaCircle } from "../store/useAppStore";
 import { api } from "../api/client";
-import type { AreaReport } from "../types";
+import type { AreaReport, AreaPrediction } from "../types";
 import CampaignChart from "./CampaignChart";
 import { useDebouncedCallback } from "../utils/useDebouncedCallback";
 
@@ -203,24 +203,13 @@ function AreaRowCard({
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-2">
-            <div className="rounded-lg bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 p-2">
-              <div className="text-[10px] text-brand-700 dark:text-brand-300 font-semibold">予想応募人数</div>
-              {report.prediction.sample_size > 0 ? (
-                <div className="text-lg font-bold text-slate-800 dark:text-slate-100">
-                  {report.prediction.avg_applicants}
-                  <span className="text-xs font-normal text-slate-500 dark:text-slate-400 ml-1">人</span>
-                </div>
-              ) : (
-                <div className="text-[11px] text-slate-500 dark:text-slate-400">実績なし</div>
-              )}
-            </div>
-            <div className="rounded-lg bg-pink-50 dark:bg-pink-900/20 border border-pink-200 dark:border-pink-800 p-2">
-              <div className="text-[10px] text-pink-700 dark:text-pink-300 font-semibold">半径{report.radius_km}km内</div>
-              <div className="text-lg font-bold text-slate-800 dark:text-slate-100">
-                {report.total_nearby_influencer_count.toLocaleString()}
-                <span className="text-xs font-normal text-slate-500 dark:text-slate-400 ml-1">人</span>
-              </div>
+          <PredictionCard prediction={report.prediction} />
+
+          <div className="rounded-lg bg-pink-50 dark:bg-pink-900/20 border border-pink-200 dark:border-pink-800 p-2">
+            <div className="text-[10px] text-pink-700 dark:text-pink-300 font-semibold">半径{report.radius_km}km内のインフルエンサー</div>
+            <div className="text-lg font-bold text-slate-800 dark:text-slate-100">
+              {report.total_nearby_influencer_count.toLocaleString()}
+              <span className="text-xs font-normal text-slate-500 dark:text-slate-400 ml-1">人</span>
             </div>
           </div>
 
@@ -258,6 +247,62 @@ function AreaRowCard({
             <p className="text-xs text-slate-400">該当するエリアが見つかりませんでした。</p>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 「33人」と断定するのではなく「〇〇人以上」という下限で示す。
+ * ・このエリア自体に実績がある場合：過去に実際にあった最少応募人数を下限とする
+ *   （＝これまで一度も下回ったことがない、という事実ベースの最低保証）
+ * ・実績が無い場合：全国のキャンペーン実績から「近隣インフルエンサー数あたりの
+ *   応募率」を算出し、そのうち最も低かった率をこのエリアの近隣インフルエンサー数に
+ *   掛けた推定値を下限とする（＝規模が近い＝周辺インフルエンサー数が近いエリアの
+ *   実績から類推する考え方）
+ */
+function PredictionCard({ prediction }: { prediction: AreaPrediction }) {
+  const hasRealData = prediction.sample_size > 0;
+  const hasEstimate = prediction.is_estimated && prediction.estimated_min_applicants != null;
+
+  return (
+    <div className="rounded-lg bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 p-2">
+      <div className="flex items-center justify-between">
+        <div className="text-[10px] text-brand-700 dark:text-brand-300 font-semibold">予想応募人数</div>
+        {hasEstimate && (
+          <span className="text-[9px] bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 rounded-full px-1.5 py-0.5">
+            推定（実績なし）
+          </span>
+        )}
+      </div>
+
+      {hasRealData && (
+        <>
+          <div className="text-lg font-bold text-slate-800 dark:text-slate-100">
+            {prediction.min_applicants}
+            <span className="text-xs font-normal text-slate-500 dark:text-slate-400 ml-1">人以上</span>
+          </div>
+          <div className="text-[10px] text-slate-500 dark:text-slate-400">
+            過去{prediction.sample_size}件の実績（平均{prediction.avg_applicants}人）に基づく最低ライン
+          </div>
+        </>
+      )}
+
+      {!hasRealData && hasEstimate && (
+        <>
+          <div className="text-lg font-bold text-slate-800 dark:text-slate-100">
+            {prediction.estimated_min_applicants}
+            <span className="text-xs font-normal text-slate-500 dark:text-slate-400 ml-1">人以上</span>
+          </div>
+          <div className="text-[10px] text-slate-500 dark:text-slate-400">
+            このエリアの実績はまだありません。全国{prediction.regression_sample_size}件の実績から、
+            近隣インフルエンサー数が近いエリアの傾向をもとに推定（参考: 平均的には{prediction.estimated_typical_applicants}人程度）
+          </div>
+        </>
+      )}
+
+      {!hasRealData && !hasEstimate && (
+        <div className="text-[11px] text-slate-500 dark:text-slate-400">推定に必要なデータがまだありません</div>
       )}
     </div>
   );
