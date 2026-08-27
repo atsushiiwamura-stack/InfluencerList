@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { MapContainer, TileLayer, Marker, Tooltip, Circle, useMap, useMapEvents } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Tooltip, Circle, Polyline, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet.markercluster";
 import { useAppStore } from "../store/useAppStore";
@@ -115,6 +115,7 @@ export default function MapView() {
   const focusSalon = useAppStore((s) => s.focusSalon);
   const darkMode = useAppStore((s) => s.darkMode);
   const areaReportCircles = useAppStore((s) => s.areaReportCircles);
+  const areaReportLines = useAppStore((s) => s.areaReportLines);
 
   // CARTOの無料ベースマップ（APIキー不要）。OSM標準タイルより配色がフラットで
   // 上に重ねるピンク/青/オレンジのピンが際立つため、SaaSダッシュボード的な
@@ -150,6 +151,16 @@ export default function MapView() {
       <MapClickHandler />
 
       {showInfluencers && <InfluencerClusterLayer influencers={influencers} salons={salons} />}
+
+      {areaReportLines.map((line, i) => (
+        <Polyline
+          key={`area-line-${i}-${line.name}`}
+          positions={line.points}
+          pathOptions={{ color: "#e34948", weight: 4, opacity: 0.7 }}
+        >
+          <Tooltip sticky>{line.name}</Tooltip>
+        </Polyline>
+      ))}
 
       {areaReportCircles.map((circle, i) => (
         <Circle

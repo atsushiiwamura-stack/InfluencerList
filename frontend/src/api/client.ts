@@ -16,13 +16,24 @@ import type {
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      ...(options.body && !(options.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
-      ...(options.headers || {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      ...options,
+      // サーバーやネットワークが固まった時に「永遠に待たされる」状態を避けるため、
+      // 明示的なタイムアウトを設ける（呼び出し側が既にsignalを渡している場合はそちらを優先）。
+      signal: options.signal ?? AbortSignal.timeout(20000),
+      headers: {
+        ...(options.body && !(options.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
+        ...(options.headers || {}),
+      },
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "TimeoutError") {
+      throw new Error("応答がありません（20秒でタイムアウトしました）。時間をおいてもう一度お試しください。");
+    }
+    throw err;
+  }
   if (!res.ok) {
     let detail = res.statusText;
     try {

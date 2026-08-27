@@ -16,7 +16,7 @@ from .auth import (
 )
 from .scoring import haversine_m, walking_minutes, composite_score
 from .uploads import parse_influencer_rows, parse_salon_rows, parse_campaign_rows
-from .station import get_nearby_stations, find_stations_by_name
+from .station import get_nearby_stations, find_stations_by_name, get_line_routes
 from .geocode import resolve_from_address, normalize_prefecture, _ALL_PREFECTURES
 
 Base.metadata.create_all(bind=engine)
@@ -83,11 +83,21 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
 # かかることがある）ため、圧縮後のバイト列も一緒に事前計算してキャッシュし、
 # GZipMiddlewareによる毎リクエストの再圧縮を回避する。
 _influencer_cache: dict = {"json": None, "gzip": None}
+_influencer_points_cache: dict = {"data": None}  # エリアレポートの近隣人数計算用（緯度経度のみ）
 
 
 def _invalidate_influencer_cache():
     _influencer_cache["json"] = None
     _influencer_cache["gzip"] = None
+    _influencer_points_cache["data"] = None
+
+
+def _get_influencer_points(db: Session):
+    if _influencer_points_cache["data"] is None:
+        _influencer_points_cache["data"] = db.query(
+            models.Influencer.id, models.Influencer.latitude, models.Influencer.longitude
+        ).all()
+    return _influencer_points_cache["data"]
 
 
 @app.get("/api/influencers", response_model=List[schemas.InfluencerOut])
@@ -457,10 +467,9 @@ async def area_report(
             models.Influencer.prefecture == matched_prefecture
         ).count()
 
-    # 緯度経度のみの軽量クエリで、周辺インフルエンサー数の判定に使う
-    influencer_points = db.query(
-        models.Influencer.id, models.Influencer.latitude, models.Influencer.longitude
-    ).all()
+    # 緯度経度のみの軽量データ（周辺インフルエンサー数の判定に使う）。
+    # 検索のたびにDBへ問い合わせると遅いためキャッシュする。
+    influencer_points = _get_influencer_points(db)
 
     salon_results = []
     all_applicant_counts: List[int] = []
@@ -516,6 +525,27 @@ async def area_report(
                 longitude=st["longitude"],
                 nearby_influencer_count=len(nearby_ids),
             ))
+
+    # 該当駅を通る実在路線を地図に線として描画する。
+    # 路線ごとの駅数が多いと読み込みが遅くなるため、路線数は最大6本までに絞り、
+    # 取得は並列＋キャッシュ済みで高速化している。「湘南新宿ライン」のような
+    # 直通運転の愛称路線はHeartRails側にデータが無いことがあり、その場合は
+    # 空リストが返るため自動的に表示対象から外れる（推測で線を引かない）。
+    line_routes: List[schemas.LineRoute] = []
+    unique_lines = []
+    for st in station_results:
+        for line in st.lines:
+            if line not in unique_lines:
+                unique_lines.append(line)
+    unique_lines = unique_lines[:6]
+    if unique_lines:
+        routes_by_name = await get_line_routes(unique_lines)
+        for name, stations in routes_by_name.items():
+            if stations:
+                line_routes.append(schemas.LineRoute(
+                    name=name,
+                    stations=[schemas.LineStation(name=s["name"], latitude=s["latitude"], longitude=s["longitude"]) for s in stations],
+                ))
 
     def _median(values: List[int]) -> Optional[float]:
         if not values:
@@ -593,6 +623,7 @@ async def area_report(
         matched_prefecture=matched_prefecture,
         prefecture_influencer_count=prefecture_influencer_count,
         station_matches=station_results,
+        line_routes=line_routes,
     )
 
 

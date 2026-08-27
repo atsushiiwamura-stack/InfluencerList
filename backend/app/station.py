@@ -107,3 +107,52 @@ async def find_stations_by_name(name: str) -> list[dict]:
             merged.append(entry)
 
     return merged
+
+
+# 路線の形状（駅の並び）はほぼ変化しないため、プロセス内メモリに無期限キャッシュする。
+# エリアレポートを検索するたびに毎回HeartRailsへ問い合わせると読み込みが遅くなるため。
+_line_route_cache: dict[str, list[dict]] = {}
+
+
+async def get_line_route(line_name: str) -> list[dict]:
+    """路線名から、その路線に属する駅を順番に並べた座標列を返す（地図に線を引くため）。
+    HeartRails Express は「湘南新宿ライン」のような直通運転の愛称路線をそのままの名前
+    では持っていないことが多く（例：藤沢駅は「JR東海道本線」として登録されている）、
+    その場合はここでは何も返さない＝実データが無いものを推測で描画しない。"""
+    if line_name in _line_route_cache:
+        return _line_route_cache[line_name]
+
+    params = {"method": "getStations", "line": line_name}
+    try:
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            resp = await client.get(HEARTRAILS_URL, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception:
+        return []
+
+    raw_stations = data.get("response", {}).get("station") or []
+    if isinstance(raw_stations, dict):
+        raw_stations = [raw_stations]
+
+    route = []
+    for st in raw_stations:
+        name = st.get("name")
+        sx, sy = st.get("x"), st.get("y")
+        if not name or sx is None or sy is None:
+            continue
+        route.append({"name": name, "latitude": float(sy), "longitude": float(sx)})
+
+    _line_route_cache[line_name] = route
+    return route
+
+
+async def get_line_routes(line_names: list[str]) -> dict[str, list[dict]]:
+    """複数路線をまとめて並列取得する（読み込み時間を抑えるため）。"""
+    import asyncio
+    uncached = [n for n in line_names if n not in _line_route_cache]
+    if uncached:
+        results = await asyncio.gather(*(get_line_route(n) for n in uncached))
+        for n, r in zip(uncached, results):
+            _line_route_cache[n] = r
+    return {n: _line_route_cache.get(n, []) for n in line_names}

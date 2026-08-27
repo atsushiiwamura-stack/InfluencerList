@@ -36,6 +36,11 @@ export interface AreaCircle {
   color: string;
 }
 
+export interface AreaLine {
+  name: string;
+  points: [number, number][];
+}
+
 interface AppState {
   influencers: Influencer[];
   salons: Salon[];
@@ -65,6 +70,7 @@ interface AppState {
   editingSalon: Salon | null;
   areaReportOpen: boolean;
   areaReportCircles: AreaCircle[];
+  areaReportLines: AreaLine[];
 
   fetchMeta: () => Promise<void>;
   fetchInfluencers: () => Promise<void>;
@@ -92,6 +98,7 @@ interface AppState {
   setUploadModalOpen: (open: boolean) => void;
   setAreaReportOpen: (open: boolean) => void;
   setAreaReportCircles: (circles: AreaCircle[]) => void;
+  setAreaReportLines: (lines: AreaLine[]) => void;
   clearAreaReportCircles: () => void;
   openAddSalonModal: () => void;
   openEditSalonModal: (salon: Salon) => void;
@@ -137,6 +144,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   editingSalon: null,
   areaReportOpen: false,
   areaReportCircles: [],
+  areaReportLines: [],
 
   fetchMeta: async () => {
     try {
@@ -261,10 +269,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setUploadModalOpen: (open) => set({ uploadModalOpen: open }),
   setAreaReportOpen: (open) => {
     set({ areaReportOpen: open });
-    if (!open) set({ areaReportCircles: [] });
+    if (!open) set({ areaReportCircles: [], areaReportLines: [] });
   },
   setAreaReportCircles: (circles) => set({ areaReportCircles: circles }),
-  clearAreaReportCircles: () => set({ areaReportCircles: [] }),
+  setAreaReportLines: (lines) => set({ areaReportLines: lines }),
+  clearAreaReportCircles: () => set({ areaReportCircles: [], areaReportLines: [] }),
   setLoginModalOpen: (open) => set({ loginModalOpen: open }),
   openAddSalonModal: () => set({ salonModalOpen: true, editingSalon: null }),
   openEditSalonModal: (salon) => set({ salonModalOpen: true, editingSalon: salon }),

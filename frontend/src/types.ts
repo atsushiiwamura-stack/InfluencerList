@@ -166,6 +166,18 @@ export interface AreaReport {
   matched_prefecture: string | null;
   prefecture_influencer_count: number | null;
   station_matches: StationAreaResult[];
+  line_routes: LineRoute[];
+}
+
+export interface LineStation {
+  name: string;
+  latitude: number;
+  longitude: number;
+}
+
+export interface LineRoute {
+  name: string;
+  stations: LineStation[];
 }
 
 export interface StationAreaResult {

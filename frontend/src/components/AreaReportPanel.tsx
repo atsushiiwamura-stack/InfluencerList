@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAppStore } from "../store/useAppStore";
-import type { AreaCircle } from "../store/useAppStore";
+import type { AreaCircle, AreaLine } from "../store/useAppStore";
 import { api } from "../api/client";
 import type { AreaReport, AreaPrediction } from "../types";
 import CampaignChart from "./CampaignChart";
@@ -31,21 +31,30 @@ export default function AreaReportPanel() {
   const focusSalon = useAppStore((s) => s.focusSalon);
   const focusBounds = useAppStore((s) => s.focusBounds);
   const setAreaReportCircles = useAppStore((s) => s.setAreaReportCircles);
+  const setAreaReportLines = useAppStore((s) => s.setAreaReportLines);
 
   const [rows, setRows] = useState<AreaRow[]>([newRow()]);
 
-  // 全行の結果が変わるたびに、地図上の円をまとめて再計算する。
+  // 全行の結果が変わるたびに、地図上の円・路線をまとめて再計算する。
   useEffect(() => {
     const circles: AreaCircle[] = [];
+    const lines: AreaLine[] = [];
+    const seenLines = new Set<string>();
     rows.forEach((row, i) => {
       if (!row.report) return;
       const color = ROW_COLORS[i % ROW_COLORS.length];
       const radiusM = row.report.radius_km * 1000;
       row.report.salons.forEach((s) => circles.push({ center: [s.salon.latitude, s.salon.longitude], radiusM, color }));
       row.report.station_matches.forEach((s) => circles.push({ center: [s.latitude, s.longitude], radiusM, color }));
+      row.report.line_routes.forEach((r) => {
+        if (seenLines.has(r.name)) return;
+        seenLines.add(r.name);
+        lines.push({ name: r.name, points: r.stations.map((s) => [s.latitude, s.longitude]) });
+      });
     });
     setAreaReportCircles(circles);
-  }, [rows, setAreaReportCircles]);
+    setAreaReportLines(lines);
+  }, [rows, setAreaReportCircles, setAreaReportLines]);
 
   const search = async (id: string, overrideRadius?: number) => {
     const row = rows.find((r) => r.id === id);
@@ -148,6 +157,18 @@ function AreaRowCard({
 }) {
   const { report, loading, error } = row;
 
+  // 読み込みが長引いた時に「固まっている？」という不安を与えないよう、
+  // 一定時間が経ったら「もう少しお待ちください」の案内を出す。
+  const [slowLoading, setSlowLoading] = useState(false);
+  useEffect(() => {
+    if (!loading) {
+      setSlowLoading(false);
+      return;
+    }
+    const timer = setTimeout(() => setSlowLoading(true), 2500);
+    return () => clearTimeout(timer);
+  }, [loading]);
+
   return (
     <div className="rounded-xl border p-2.5 space-y-2" style={{ borderColor: color + "55" }}>
       <div className="flex items-center gap-1.5">
@@ -162,9 +183,10 @@ function AreaRowCard({
         <button
           onClick={onSearch}
           disabled={loading}
-          className="rounded-lg bg-brand-600 text-white text-xs px-3 py-1.5 font-medium disabled:opacity-50 flex-shrink-0"
+          className="rounded-lg bg-brand-600 text-white text-xs px-3 py-1.5 font-medium disabled:opacity-50 flex-shrink-0 flex items-center gap-1"
         >
-          {loading ? "..." : "検索"}
+          {loading && <span className="inline-block w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
+          {loading ? "検索中" : "検索"}
         </button>
         {onRemove && (
           <button onClick={onRemove} className="text-slate-400 hover:text-red-500 text-sm flex-shrink-0 px-1">
@@ -173,18 +195,24 @@ function AreaRowCard({
         )}
       </div>
 
+      {slowLoading && (
+        <p className="text-[10px] text-slate-400 flex items-center gap-1">
+          ⏳ もう少しお待ちください（駅・路線データを取得しています）
+        </p>
+      )}
+
       <label className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
         <span>半径</span>
         <input
           type="number"
-          min={0.1}
+          min={1}
           max={20}
-          step={0.1}
+          step={1}
           value={row.radiusKm}
-          onChange={(e) => onRadiusChange(Number(e.target.value) || 0.1)}
-          className="w-16 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs px-2 py-1 text-slate-700 dark:text-slate-200"
+          onChange={(e) => onRadiusChange(Math.round(Number(e.target.value)) || 1)}
+          className="w-14 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs px-2 py-1 text-slate-700 dark:text-slate-200"
         />
-        <span>km（自由入力・地図に円で表示）</span>
+        <span>km（数字入力または▲▼、地図に円で表示）</span>
       </label>
 
       {error && <p className="text-xs text-red-500">{error}</p>}
@@ -214,11 +242,19 @@ function AreaRowCard({
           </div>
 
           {report.station_matches.map((st, i) => (
-            <div key={i} className="rounded-lg border border-sky-200 dark:border-sky-800 bg-sky-50/50 dark:bg-sky-900/10 p-2 flex items-center justify-between">
-              <span className="text-xs text-slate-700 dark:text-slate-200">🚉 {st.name}駅</span>
-              <span className="text-[10px] bg-pink-50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 rounded-full px-1.5 py-0.5">
-                📷{st.nearby_influencer_count}人
-              </span>
+            <div key={i} className="rounded-lg border border-sky-200 dark:border-sky-800 bg-sky-50/50 dark:bg-sky-900/10 p-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-700 dark:text-slate-200">🚉 {st.name}駅</span>
+                <span className="text-[10px] bg-pink-50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 rounded-full px-1.5 py-0.5">
+                  📷{st.nearby_influencer_count}人
+                </span>
+              </div>
+              {st.lines.length > 0 && (
+                <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                  🔴 {st.lines.join("・")}
+                  {report.line_routes.length === 0 && "（この駅の路線データは地図に線として表示できませんでした）"}
+                </div>
+              )}
             </div>
           ))}
 
